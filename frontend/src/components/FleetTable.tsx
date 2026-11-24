@@ -1,8 +1,9 @@
-import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api";
 import { formatNumber, relativeTime } from "../lib/format";
 import { useData } from "../state";
-import type { FleetItem } from "../types";
+import type { FleetItem, FleetViewFilters, SavedFleetView } from "../types";
 import { Badge } from "./ui";
 
 type SortKey =
@@ -14,6 +15,17 @@ type SortKey =
   | "tls_pct"
   | "policy_p"
   | "health";
+
+const SORT_KEYS: SortKey[] = [
+  "domain",
+  "messages",
+  "aligned_pct",
+  "failing_sources",
+  "last_report",
+  "tls_pct",
+  "policy_p",
+  "health",
+];
 
 function healthTone(status: string | null): "good" | "warn" | "bad" | "neutral" {
   if (status === "pass") return "good";
@@ -54,20 +66,108 @@ function valueFor(item: FleetItem, key: SortKey): string | number {
 }
 
 export function FleetTable({ items }: { items: FleetItem[] }) {
-  const { setDomain } = useData();
+  const { setDomain, toast } = useData();
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
     key: "messages",
     dir: "desc",
   });
   const [tag, setTag] = useState("");
+  const [policy, setPolicy] = useState("");
+  const [health, setHealth] = useState("");
+  const [onlyFailing, setOnlyFailing] = useState(false);
+  const [maxAlignment, setMaxAlignment] = useState("");
+  const [maxTls, setMaxTls] = useState("");
+  const [views, setViews] = useState<SavedFleetView[]>([]);
+  const [activeView, setActiveView] = useState("");
+  const [savingView, setSavingView] = useState(false);
+  const [viewName, setViewName] = useState("");
   const tags = useMemo(
     () => Array.from(new Set(items.flatMap((item) => item.tags ?? []))).sort(),
     [items],
   );
-  const filtered = useMemo(
-    () => (tag ? items.filter((item) => (item.tags ?? []).includes(tag)) : items),
-    [items, tag],
-  );
+
+  useEffect(() => {
+    api
+      .fleetViews()
+      .then((result) => setViews(result.items))
+      .catch(() => {
+        /* saved views are optional; the table still works */
+      });
+  }, []);
+
+  const filtered = useMemo(() => {
+    let result = items;
+    if (tag) result = result.filter((item) => (item.tags ?? []).includes(tag));
+    if (policy) result = result.filter((item) => (item.policy_p ?? "none") === policy);
+    if (health) result = result.filter((item) => (item.health ?? "unknown") === health);
+    if (onlyFailing) result = result.filter((item) => item.failing_sources > 0);
+    if (maxAlignment !== "") {
+      const limit = Number(maxAlignment);
+      if (Number.isFinite(limit)) result = result.filter((item) => item.aligned_pct < limit);
+    }
+    if (maxTls !== "") {
+      const limit = Number(maxTls);
+      if (Number.isFinite(limit)) {
+        result = result.filter((item) => item.tls_pct === null || item.tls_pct < limit);
+      }
+    }
+    return result;
+  }, [items, tag, policy, health, onlyFailing, maxAlignment, maxTls]);
+
+  function currentFilters(): FleetViewFilters {
+    return {
+      tag,
+      policy,
+      health,
+      only_failing: onlyFailing,
+      max_alignment: maxAlignment,
+      max_tls: maxTls,
+      sort_key: sort.key,
+      sort_dir: sort.dir,
+    };
+  }
+
+  function applyView(view: SavedFleetView) {
+    const filters = view.filters ?? {};
+    setActiveView(String(view.id));
+    setTag(filters.tag ?? "");
+    setPolicy(filters.policy ?? "");
+    setHealth(filters.health ?? "");
+    setOnlyFailing(Boolean(filters.only_failing));
+    setMaxAlignment(filters.max_alignment ?? "");
+    setMaxTls(filters.max_tls ?? "");
+    const key = (filters.sort_key ?? "") as SortKey;
+    setSort({
+      key: SORT_KEYS.includes(key) ? key : "messages",
+      dir: filters.sort_dir === "asc" ? "asc" : "desc",
+    });
+  }
+
+  async function saveView() {
+    if (!viewName.trim()) return;
+    try {
+      const saved = await api.createFleetView({ name: viewName.trim(), filters: currentFilters() });
+      setViews((current) => [...current, saved].sort((a, b) => a.name.localeCompare(b.name)));
+      setActiveView(String(saved.id));
+      setSavingView(false);
+      setViewName("");
+      toast("Fleet view saved");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not save the fleet view", "error");
+    }
+  }
+
+  async function deleteView() {
+    if (!activeView) return;
+    try {
+      await api.deleteFleetView(Number(activeView));
+      setViews((current) => current.filter((view) => String(view.id) !== activeView));
+      setActiveView("");
+      toast("Fleet view deleted");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not delete the fleet view", "error");
+    }
+  }
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -118,20 +218,107 @@ export function FleetTable({ items }: { items: FleetItem[] }) {
           <h2 className="card-title">Fleet comparison</h2>
           <p className="card-sub">Click a domain to drill down · click a heading to sort</p>
         </div>
-        <div className="timeline-head-actions">
-          {tags.length > 0 ? (
-            <select className="fleet-tag-filter" value={tag} onChange={(event) => setTag(event.target.value)}>
-              <option value="">All groups</option>
-              {tags.map((item) => (
-                <option value={item} key={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+        <Badge tone="info">{filtered.length} domains</Badge>
+      </div>
+      <div className="fleet-controls">
+        <select value={tag} onChange={(event) => setTag(event.target.value)} aria-label="Filter by group">
+          <option value="">All groups</option>
+          {tags.map((item) => (
+            <option value={item} key={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+        <select value={policy} onChange={(event) => setPolicy(event.target.value)} aria-label="Filter by policy">
+          <option value="">Any policy</option>
+          <option value="none">p=none</option>
+          <option value="quarantine">p=quarantine</option>
+          <option value="reject">p=reject</option>
+        </select>
+        <select value={health} onChange={(event) => setHealth(event.target.value)} aria-label="Filter by health">
+          <option value="">Any health</option>
+          <option value="pass">pass</option>
+          <option value="warn">warn</option>
+          <option value="fail">fail</option>
+          <option value="unknown">unknown</option>
+        </select>
+        <label className="fleet-check">
+          <input
+            type="checkbox"
+            checked={onlyFailing}
+            onChange={(event) => setOnlyFailing(event.target.checked)}
+          />
+          Failing sources
+        </label>
+        <label className="fleet-number">
+          Aligned &lt;
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={maxAlignment}
+            onChange={(event) => setMaxAlignment(event.target.value)}
+            placeholder="100"
+          />
+        </label>
+        <label className="fleet-number">
+          TLS &lt;
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={maxTls}
+            onChange={(event) => setMaxTls(event.target.value)}
+            placeholder="100"
+          />
+        </label>
+        <div className="fleet-view-actions">
+          <select
+            value={activeView}
+            onChange={(event) => {
+              const view = views.find((item) => String(item.id) === event.target.value);
+              if (view) applyView(view);
+              else setActiveView("");
+            }}
+            aria-label="Saved fleet views"
+          >
+            <option value="">Saved views</option>
+            {views.map((view) => (
+              <option value={view.id} key={view.id}>
+                {view.name}
+              </option>
+            ))}
+          </select>
+          <button className="btn ghost sm" type="button" onClick={() => setSavingView((value) => !value)}>
+            Save view
+          </button>
+          {activeView ? (
+            <button className="btn ghost icon" type="button" onClick={() => void deleteView()} aria-label="Delete saved view">
+              <Trash2 size={13} />
+            </button>
           ) : null}
-          <Badge tone="info">{filtered.length} domains</Badge>
         </div>
       </div>
+      {savingView ? (
+        <div className="fleet-save">
+          <input
+            value={viewName}
+            placeholder="View name"
+            maxLength={120}
+            onChange={(event) => setViewName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void saveView();
+              if (event.key === "Escape") setSavingView(false);
+            }}
+          />
+          <button className="btn primary sm" type="button" disabled={!viewName.trim()} onClick={() => void saveView()}>
+            Save
+          </button>
+          <button className="btn ghost sm" type="button" onClick={() => setSavingView(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : null}
       <div style={{ padding: "2px 8px 12px", overflowX: "auto" }}>
         <table className="data fleet-table">
           <thead>

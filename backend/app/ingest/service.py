@@ -235,6 +235,7 @@ def _store_dmarc(
         policy_adkim=report.policy_adkim,
         policy_aspf=report.policy_aspf,
         policy_fo=report.policy_fo,
+        report_errors=report.report_errors,
         record_count=len(report.records),
         message_count=report.message_count,
         aligned_count=report.aligned_count,
@@ -319,10 +320,14 @@ def _store_tls(
     session.flush()
 
     for policy in report.policies:
+        policy_name = normalize_domain(policy.policy_domain or report.policy_domain or "")
+        policy_domain = (
+            _get_or_create_domain(session, policy_name) if policy_name else domain
+        )
         session.add(
             TlsPolicy(
                 tls_report_id=record.id,  # type: ignore[arg-type]
-                domain_id=domain.id,  # type: ignore[arg-type]
+                domain_id=policy_domain.id,  # type: ignore[arg-type]
                 report_date=report.date_begin.date(),
                 policy_type=policy.policy_type,
                 policy_domain=normalize_domain(policy.policy_domain or ""),
@@ -336,9 +341,9 @@ def _store_tls(
             session.add(
                 TlsFailure(
                     tls_report_id=record.id,  # type: ignore[arg-type]
-                    domain_id=domain.id,  # type: ignore[arg-type]
+                    domain_id=policy_domain.id,  # type: ignore[arg-type]
                     report_date=report.date_begin.date(),
-                    policy_domain=normalize_domain(policy.policy_domain or ""),
+                    policy_domain=policy_name or None,
                     receiving_mx=failure.receiving_mx,
                     result_type=failure.result_type,
                     sending_mta_ip=failure.sending_mta_ip,

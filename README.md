@@ -33,8 +33,12 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
   reports: which sources would be newly quarantined or rejected, what stays the same, and a
   confidence-labelled risk verdict — read-only, with no DNS writes.
 - **Domain timeline.** One chronology of alerts, DNS changes, new identities, report gaps and
-  private operator notes, so a change can be explained after the fact.
-- **TLS delivery.** Session success rate per MX host, failure reasons
+  private operator notes, so a change can be explained after the fact. DNS/SPF/MTA-STS/TLS-RPT
+  snapshot changes are shown with before/after summaries.
+- **Saved fleet views.** Name and recall fleet filters and sort order: group, policy, health,
+  failing sources, alignment/TLS thresholds.
+- **TLS delivery.** Session success rate per MX host, every policy domain in multi-policy
+  TLS-RPT reports, failure reasons
   (`certificate-expired`, `starttls-not-supported`, …) and the reporters behind them.
 - **Checks your configuration, not just your reports.** Live DNS checks for DMARC, SPF (with the
   10-lookup limit), DKIM selectors, MX, MTA-STS (policy-id validation), TLS-RPT, DNSSEC and BIMI.
@@ -58,7 +62,8 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
   private.
 - **Export or compare.** Download the current view as CSV/JSON, a capped raw-report ZIP, or
   compare every domain side by side (volume, alignment, TLS, policy, health, 14-day trend).
-- **Report browser.** Search, filter, inspect every record, download the original XML/JSON.
+- **Report browser.** Search, filter, inspect every record, download the original XML/JSON;
+  RFC 9990 reporter warnings are shown separately from DMARC failures.
 - **Boring to operate.** One container, one SQLite file, consistent backups with a tested
   restore path, no external services, no telemetry, no third-party IP lookups (GeoIP is local).
 
@@ -117,6 +122,31 @@ Data lives in the `dmarcview-data` Docker volume:
 docker run --rm -v dmarcview_dmarcview-data:/data -v "$PWD":/backup alpine \
   tar czf /backup/dmarcview-backup.tgz -C /data .
 ```
+
+## Release notes
+
+Tagged releases get structured notes automatically. The workflow first asks GitHub for its
+generated changelog, then, when `DEEPSEEK_API_KEY` is configured, asks a DeepSeek chat model to
+turn the commit/diff evidence into prose, highlights, upgrade notes and verification notes. The
+model output is normalized to one line per paragraph/bullet. If the token is missing or the API
+fails, the GitHub-generated notes are used instead.
+
+Configure the token as a **repository Actions secret** — never in `.env`, the repository or a
+workflow file:
+
+```bash
+gh secret set DEEPSEEK_API_KEY --repo ComSubVie/DMARCview
+# paste the token at the prompt
+```
+
+Or use **Settings → Secrets and variables → Actions → New repository secret**. Optional
+repository variables:
+
+- `DEEPSEEK_MODEL` — defaults to `deepseek-chat`.
+- `DEEPSEEK_API_URL` — defaults to `https://api.deepseek.com/chat/completions`.
+
+The release is created only after the image publish succeeds, and an existing release is never
+rewritten. The generated body is followed by the Full Changelog link, container image and digest.
 
 ## Published container images
 
@@ -427,9 +457,10 @@ and period-over-period changes; v1.4 completed analytics; v1.5 added sharing; v1
 export/fleet; v1.7 added retention; v1.8 delivered RFC 9989 tree-walk/PSD policy discovery,
 a DMARCbis readiness panel, external report authorization and effective-policy coverage; v1.9
 adds the read-only policy simulator and the private domain timeline; v1.10 adds restore,
-weekly digest, reporter quality, known senders, per-domain alert overrides and domain groups.
-Next: saved fleet views and signal-quality work. RUF and platform work remain optional.
-Sequencing and effort estimates live in [docs/ROADMAP.md](docs/ROADMAP.md).
+weekly digest, reporter quality, known senders, per-domain alert overrides and domain groups;
+v1.11 adds saved fleet views and signal quality: TLS policy attribution, RFC 9990 warnings and
+DNS change history. No mandatory roadmap work remains; MFA/audit is parked, and RUF/platform
+work is optional. Sequencing and effort estimates live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
 
@@ -437,7 +468,7 @@ Sequencing and effort estimates live in [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (110 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (112 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build

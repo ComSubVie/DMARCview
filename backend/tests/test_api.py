@@ -476,3 +476,27 @@ def test_alert_domain_override_api(auth_client: TestClient):
     assert reset.status_code == 200
     rule = next(item for item in reset.json()["rules"] if item["kind"] == "new_source")
     assert rule["override"] is None
+
+
+def test_saved_fleet_views_crud(auth_client: TestClient):
+    view = auth_client.post(
+        "/api/fleet/views",
+        json={
+            "name": "Production problems",
+            "filters": {"tag": "production", "only_failing": True, "sort_key": "failing_sources"},
+        },
+    )
+    assert view.status_code == 201, view.text
+    item = view.json()
+    assert item["filters"]["only_failing"] is True
+    listing = auth_client.get("/api/fleet/views").json()
+    assert any(entry["id"] == item["id"] for entry in listing["items"])
+    duplicate = auth_client.post(
+        "/api/fleet/views",
+        json={"name": "Production problems", "filters": {}},
+    )
+    assert duplicate.status_code == 409
+    removed = auth_client.delete(f"/api/fleet/views/{item['id']}")
+    assert removed.status_code == 200
+    after = auth_client.get("/api/fleet/views").json()
+    assert all(entry["id"] != item["id"] for entry in after["items"])

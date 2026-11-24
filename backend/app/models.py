@@ -56,6 +56,18 @@ class DomainTag(SQLModel, table=True):
     tag: str = Field(max_length=64)
 
 
+class SavedFleetView(SQLModel, table=True):
+    """A named filter/sort preset for the fleet comparison table."""
+
+    __tablename__ = "saved_fleet_views"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True, max_length=120)
+    filters: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class DomainAnnotation(SQLModel, table=True):
     """A private operator note on a domain timeline."""
 
@@ -118,6 +130,7 @@ class Report(SQLModel, table=True):
     policy_adkim: Optional[str] = Field(default=None, max_length=16)
     policy_aspf: Optional[str] = Field(default=None, max_length=16)
     policy_fo: Optional[str] = Field(default=None, max_length=32)
+    report_errors: list[str] = Field(default_factory=list, sa_column=Column(JSON))
 
     record_count: int = Field(default=0)
     message_count: int = Field(default=0)

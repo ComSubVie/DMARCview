@@ -1,6 +1,6 @@
 # Roadmap
 
-_Rev 15 · 24 November 2026 · operational confidence (v1.10)_
+_Rev 16 · 24 November 2026 · signal quality delivered (v1.11)_
 
 v1 answered **"what happened?"**; v1.1 added **"is my configuration correct?"**; v1.2 added
 **"tell me when it changes"**; v1.4 completed **why it changed**; v1.5 added sharing; v1.6
@@ -8,14 +8,15 @@ added export/fleet; v1.7 added retention; v1.8 delivers DMARCbis: RFC 9989 tree-
 discovery, a readiness panel, external reporting authorization and effective-policy coverage.
 v1.9 added decision support: a read-only policy simulator and a private domain timeline. v1.10
 adds operational confidence: restore, weekly digest, reporter quality, known senders,
-per-domain alert overrides/retry and domain groups. Saved fleet views and MFA remain parked;
-signal quality (Phase 9) is next. RUF and platform work remain optional.
+per-domain alert overrides/retry and domain groups. v1.11 adds saved fleet views and signal
+quality: TLS policy attribution, RFC 9990 warnings and DNS change history. MFA remains parked;
+RUF and platform work remain optional.
 
 ## Delivered so far
 
 | Area | What shipped |
 | --- | --- |
-| **Migrations** | Alembic `0001` baseline through `0007` annotations (health/probes/jobs, alerts, ASN, share links/mute, DMARCbis, annotations). Existing databases upgrade in place on start; `python -m app.cli migrate`. |
+| **Migrations** | Alembic `0001` baseline through `0012` report errors (health/probes/jobs, alerts, ASN, share links/mute, DMARCbis, annotations, source expectations, alert overrides/retry, domain tags, saved fleet views, report errors). Existing databases upgrade in place on start; `python -m app.cli migrate`. |
 | **Scheduler** | In-process runner with overlap guards, jitter, initial delay and `job_runs`. Jobs: health checks, transport probes, PTR enrichment, alert evaluation. No Redis/Celery. |
 | **Domain settings** | Per-domain DKIM selectors, extra probe targets, expected report interval, check toggle. |
 | **Domain health** | DMARC (incl. drift vs reports), SPF (10-lookup/2-void), DKIM, MX, MTA-STS, TLS-RPT, DNSSEC, BIMI; snapshot history and Health page. |
@@ -40,15 +41,17 @@ signal quality (Phase 9) is next. RUF and platform work remain optional.
 | **Reporter quality** | Per-reporter coverage, lateness and quality badges (good/sparse/late/silent). |
 | **Known senders** | Per-domain IP/CIDR/ASN/domain expectations suppress `new_source` alerts. |
 | **Alert overrides** | Per-domain disable/threshold/cooldown overrides plus retry/backoff for failed deliveries. |
-| **Domain groups** | Free-form domain tags and a fleet group filter; saved filter presets remain parked. |
-| **Tests** | 110 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage, share links, domain profile, check mute, GeoIP backfill, export, fleet, retention, DMARCbis tree walk/PSD, external reporting authorization, policy simulation, timeline annotations, restore, digest, reporter quality, known senders, alert overrides, domain tags. |
+| **Domain groups** | Free-form domain tags and a fleet group filter. |
+| **Saved fleet views** | Named filter/sort presets for group, policy, health, failing sources, alignment/TLS thresholds. |
+| **TLS policy attribution** | Every TLS-RPT `policies[]` entry is attributed to its own policy domain; dashboard/report filters no longer stop at the first domain. |
+| **Report quality** | RFC 9990 `<error>` warnings are stored and shown separately from DMARC failures. |
+| **DNS change history** | DMARC/SPF/MTA-STS/TLS-RPT changes appear in the domain timeline with before/after summaries. |
+| **Tests** | 112 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage, share links, domain profile, check mute, GeoIP backfill, export, fleet, retention, DMARCbis tree walk/PSD, external reporting authorization, policy simulation, timeline annotations, restore, digest, reporter quality, known senders, alert overrides, domain tags, saved fleet views, TLS policy attribution, RFC 9990 errors. |
 
 Known limits: DNSSEC relies on the resolver's AD flag (no chain validation); BIMI checks
 presence only; probes need outbound port 25; per-domain overrides exist, but the UI exposes
 disable/reset only (thresholds and cooldowns use the API); failed deliveries retry with
-backoff. Restore is local; there is no
-off-box backup target. MFA/audit and saved fleet views are parked. TLS-RPT reports are
-attributed to their first policy domain; RFC 9990 `<error>` elements are not surfaced; RUF is
+backoff. Restore is local; there is no off-box backup target. MFA/audit remains parked. RUF is
 not ingested. Timeline auto-events are derived from the last 20 health snapshots and the last
 180 days.
 
@@ -70,18 +73,16 @@ not ingested. Timeline auto-events are derived from the last 20 health snapshots
 | Phase | Theme | Effort | Status |
 | --- | --- | --- | --- |
 | **7** | Decision support: policy simulator, domain timeline | 3–5 d | **delivered** |
-| **8** | Operational confidence: restore, digest, trust, groups | 7–13 d | **mostly delivered** (saved views + MFA parked) |
-| **9** | Signal quality: TLS policy attribution, report errors, DNS history | 2–4 d | **next** |
+| **8** | Operational confidence: restore, digest, trust, groups | 7–13 d | **delivered** (MFA parked by request) |
+| **9** | Signal quality: TLS policy attribution, report errors, DNS history | 2–4 d | **delivered** |
 | **4** | Forensic (RUF) reports | 3–4 d | optional |
 | **5** | Platform: Postgres, IMAP, tokens, metrics | 8–10 d | trigger-based |
 
-≈ **3–6 focused engineer-days** remain for saved fleet views (1–2 d) and Phase 9 (2–4 d).
-MFA/audit is deliberately parked. RUF adds 3–4 days and platform work 8–10, both optional and
-reorderable.
+No mandatory roadmap work remains. MFA/audit is deliberately parked. RUF adds 3–4 days and
+platform work 8–10 when triggered; both are optional and reorderable.
 
-Phase 8 delivered the operational basics; saved views are a convenience, not a blocker. Phase
-9 fixes attribution and data-quality gaps that would otherwise make later analytics look more
-precise than they are.
+Phases 8 and 9 are complete, except for the explicitly parked MFA/audit slice. The next work is
+driven by operational need rather than the roadmap.
 
 ---
 
@@ -214,15 +215,15 @@ existing report/source data.
 | **8.4 Source expectations** | Per-domain IP/CIDR/ASN/domain allowlist; suppresses `new_source` alerts. | **delivered** |
 | **8.5 Alert follow-ups** | Per-domain override API, UI mute/reset, delivery retry with backoff. | **delivered** (threshold editing is API-only) |
 | **8.6 MFA + audit log** | TOTP/recovery codes and audit trail. | **parked by request** |
-| **8.7 Groups and saved views** | Domain tags + fleet group filter. Saved filter presets. | **groups delivered; saved views remain** |
+| **8.7 Groups and saved views** | Domain tags + fleet group filter; named filter/sort presets. | **delivered** |
 
-## Phase 9 — Signal quality (2–4 days)
+## Phase 9 — Signal quality (delivered)
 
-| Item | Scope | Effort |
+| Item | Scope | Status |
 | --- | --- | --- |
-| **9.1 TLS-RPT policy attribution** | Surface every `policies[]` entry instead of attributing a report to its first policy domain; filters and TLS summaries use policy-level rows. `TlsPolicy` already exists. | 1–2 d |
-| **9.2 Report quality** | Parse RFC 9990 `<error>` elements and reporter failures, show them on the report/detail and in a data-quality count; do not treat them as DMARC failures. | 0.5–1 d |
-| **9.3 DNS change history** | Diff health-snapshot evidence for DMARC/SPF/MTA-STS/TLS-RPT records and show “changed from … to …”; link to domain timeline events. | 0.5–1 d |
+| **9.1 TLS-RPT policy attribution** | Every `policies[]` entry is stored with its own policy domain; TLS dashboard/report filters resolve by policy domain, including pre-existing rows. | **delivered** |
+| **9.2 Report quality** | RFC 9990 `<error>` elements are stored and shown as reporter warnings, never counted as DMARC failures. | **delivered** |
+| **9.3 DNS change history** | DMARC/SPF/MTA-STS/TLS-RPT snapshot diffs appear in the domain timeline with before/after summaries. | **delivered** (timeline) |
 
 ## Phase 4 — Forensic / RUF reports (3–4 days, optional)
 
@@ -254,8 +255,8 @@ print stylesheet, editable domain profiles, and per-domain scheduled-check mute.
 
 Shipped in v1.9: read-only policy simulator and private domain timeline (with annotations).
 Shipped in v1.10: weekly digest, reporter scorecard, source allowlisting, per-domain alert
-overrides, delivery retry, domain tags and the fleet group filter. Remaining: saved fleet views
-and DNS change history.
+overrides, delivery retry, domain tags and the fleet group filter. Shipped in v1.11: saved
+fleet views, TLS policy attribution, RFC 9990 warnings and DNS history.
 
 ---
 
@@ -275,4 +276,4 @@ and DNS change history.
 1. **Off-box backup:** when a target appears, sync the SQLite snapshot and `data/archive/`.
 2. **Share-link rate limit:** currently per-process memory; revisit if multiple workers/replicas are added.
 3. **RUF/PII policy:** decide whether forensic reports are worth the extra handling before Phase 4.
-4. **Saved fleet views and MFA/audit:** intentionally parked; no release blocker.
+4. **MFA/audit:** intentionally parked; no release blocker.

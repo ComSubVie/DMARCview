@@ -57,14 +57,15 @@ docker build -t dmarcview .
 | `backend/app/analytics.py` | Read-side aggregation for the dashboard, reports and TLS pages |
 | `backend/app/simulation.py` | Read-only policy projection over stored reports |
 | `backend/app/timeline.py` | Private annotations plus derived domain timeline events |
-| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `simulation`, `timeline`, `ingest`, `health`, `alerts`, `share`, `export` |
+| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `simulation`, `timeline`, `expectations`, `fleet_views`, `ingest`, `health`, `alerts`, `share`, `export` |
 | `backend/app/jobs.py` | In-process scheduler (health checks, probes, PTR enrichment, alert evaluation) |
 | `backend/app/share.py` | Share-token signing, public payload shaping, storage helpers |
 | `backend/app/retention.py` | Raw archiving and opt-in report pruning |
 | `backend/app/models.py` | SQLModel schema — the source of truth for Alembic |
-| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute, `0006` DMARCbis fields, `0007` annotations, `0008` source expectations, `0009` alert overrides/retry, `0010` domain tags) |
+| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute, `0006` DMARCbis fields, `0007` annotations, `0008` source expectations, `0009` alert overrides/retry, `0010` domain tags, `0011` saved fleet views, `0012` report errors) |
 | `frontend/src/` | `pages/`, `components/`, `state.tsx`, `api.ts`, `types.ts`, `styles.css` |
 | `samples/` | Hand-written CRLF `.eml` fixtures used by the test suite |
+| `scripts/` | GeoIP/demo helpers and the DeepSeek release-note generator |
 | `docs/` | Roadmap and screenshots |
 
 ## Invariants and traps
@@ -197,18 +198,23 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 - Tag releases as `vX.Y.Z`; `.github/workflows/publish-image.yml` publishes
   `ghcr.io/<owner>/dmarcview` for `linux/amd64` and `linux/arm64`. `latest` only tracks
   stable tags; `edge` tracks the default branch.
+- The release job generates notes with `scripts/generate_release_notes.py`. It uses
+  `DEEPSEEK_API_KEY` when configured and falls back to GitHub generated notes. Never commit
+  the token or print it; it is an Actions secret.
 - The workflow runs the tests and a frontend build before publishing, and attaches SBOM +
   provenance attestations.
-- After a successful tag publish it creates the GitHub Release automatically: generated
-  notes plus the image reference and digest. Re-running the workflow leaves an existing
-  release untouched, so hand-edited notes are safe.
+- After a successful tag publish it creates the GitHub Release automatically: AI-generated or
+  fallback notes plus the Full Changelog link, image reference and digest. Re-running the
+  workflow leaves an existing release untouched, so hand-edited notes are safe.
+- Web Markdown (release notes included) must not use manual line wraps: one line per paragraph
+  and per bullet, blank lines only between blocks.
 
 ## Roadmap
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
 the user asks for them. Export, fleet comparison, retention, DMARCbis and decision support are
-delivered; Phase 9 (TLS policy attribution, report errors, DNS history) is the next product
-slice. Saved fleet views, MFA/audit, RUF and platform work stay parked/trigger-based.
+delivered, including the v1.11 saved fleet views and signal-quality work. No mandatory roadmap
+work remains; MFA/audit stays parked, and RUF/platform work remains optional/trigger-based.
 
 ## Security expectations
 

@@ -115,6 +115,15 @@ export const api = {
     request<import("./types").DomainHealth>(`/domain-health/run${query({ domain })}`, {
       method: "POST",
     }),
+  fleetViews: () =>
+    request<{ items: import("./types").SavedFleetView[] }>("/fleet/views"),
+  createFleetView: (payload: { name: string; filters: import("./types").FleetViewFilters }) =>
+    request<import("./types").SavedFleetView>("/fleet/views", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteFleetView: (id: number) =>
+    request<{ ok: boolean }>(`/fleet/views/${id}`, { method: "DELETE" }),
   fleetHealth: () =>
     request<{ items: import("./types").FleetHealthItem[] }>("/domain-health/fleet"),
   domainSettings: (domain: string) =>

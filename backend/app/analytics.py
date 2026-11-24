@@ -111,13 +111,18 @@ def _source_conditions(domain_id: Optional[int], rng: DateRange) -> list[Any]:
     return conditions
 
 
-def _tls_conditions(domain_id: Optional[int], rng: DateRange) -> list[Any]:
+def _tls_conditions(domain: Optional[Domain], rng: DateRange) -> list[Any]:
     conditions: list[Any] = [
         TlsPolicy.report_date >= rng.start,
         TlsPolicy.report_date <= rng.end,
     ]
-    if domain_id is not None:
-        conditions.append(TlsPolicy.domain_id == domain_id)
+    if domain is not None:
+        conditions.append(
+            or_(
+                TlsPolicy.domain_id == domain.id,
+                func.lower(TlsPolicy.policy_domain) == domain.name.lower(),
+            )
+        )
     return conditions
 
 
@@ -249,12 +254,7 @@ def dashboard(session: Session, domain: Optional[Domain], rng: DateRange) -> dic
     }
     summary["sentences"] = _summary_sentences(summary, policy)
 
-    tls_conditions: list[Any] = [
-        TlsPolicy.report_date >= rng.start,
-        TlsPolicy.report_date <= rng.end,
-    ]
-    if domain_id is not None:
-        tls_conditions.append(TlsPolicy.domain_id == domain_id)
+    tls_conditions = _tls_conditions(domain, rng)
     tls_row = session.exec(
         select(
             func.coalesce(func.sum(TlsPolicy.total_success), 0),
@@ -845,11 +845,7 @@ def _fleet(session: Session, rng: DateRange) -> list[dict[str, Any]]:
             select(
                 func.coalesce(func.sum(TlsPolicy.total_success), 0),
                 func.coalesce(func.sum(TlsPolicy.total_failure), 0),
-            ).where(
-                TlsPolicy.domain_id == domain.id,
-                TlsPolicy.report_date >= rng.start,
-                TlsPolicy.report_date <= rng.end,
-            )
+            ).where(*_tls_conditions(domain, rng))
         ).one()
         tls_success, tls_failure = int(tls_success), int(tls_failure)
         tls_sessions = tls_success + tls_failure
@@ -1374,6 +1370,7 @@ def reports_page(
                 "sources": report.source_count,
                 "policy": report.policy_p,
                 "source": report.source,
+                "errors": len(report.report_errors or []),
                 "ingested_at": _iso(report.ingested_at),
             }
         )
@@ -1426,6 +1423,7 @@ def report_detail(session: Session, report_id: int) -> Optional[dict[str, Any]]:
         "ingested_at": _iso(report.ingested_at),
         "received_at": _iso(report.received_at),
         "source": report.source,
+        "errors": report.report_errors or [],
         "raw_sha256": report.raw_sha256,
         "records": [
             {
@@ -1462,24 +1460,37 @@ def report_detail(session: Session, report_id: int) -> Optional[dict[str, Any]]:
 
 # ----------------------------------------------------------------------- TLS
 def tls_dashboard(session: Session, domain: Optional[Domain], rng: DateRange) -> dict[str, Any]:
-    conditions = _tls_conditions(domain.id if domain else None, rng)
+    conditions = _tls_conditions(domain, rng)
     policies = session.exec(select(TlsPolicy).where(*conditions)).all()
-    failures = session.exec(
-        select(TlsFailure).where(
-            TlsFailure.report_date >= rng.start,
-            TlsFailure.report_date <= rng.end,
-            *([TlsFailure.domain_id == domain.id] if domain else []),
+    failure_conditions: list[Any] = [
+        TlsFailure.report_date >= rng.start,
+        TlsFailure.report_date <= rng.end,
+    ]
+    if domain:
+        failure_conditions.append(
+            or_(
+                TlsFailure.domain_id == domain.id,
+                func.lower(TlsFailure.policy_domain) == domain.name.lower(),
+            )
         )
-    ).all()
+    failures = session.exec(select(TlsFailure).where(*failure_conditions)).all()
     report_conditions = [
         TlsReport.report_date >= rng.start,
         TlsReport.report_date <= rng.end,
     ]
     if domain:
-        report_conditions.append(TlsReport.domain_id == domain.id)
-    reports = session.exec(
-        select(TlsReport).where(*report_conditions).order_by(TlsReport.date_begin.desc())
-    ).all()
+        report_ids = {policy.tls_report_id for policy in policies}
+        if not report_ids:
+            reports = []
+        else:
+            report_conditions.append(TlsReport.id.in_(report_ids))
+            reports = session.exec(
+                select(TlsReport).where(*report_conditions).order_by(TlsReport.date_begin.desc())
+            ).all()
+    else:
+        reports = session.exec(
+            select(TlsReport).where(*report_conditions).order_by(TlsReport.date_begin.desc())
+        ).all()
 
     success = sum(policy.total_success for policy in policies)
     failure = sum(policy.total_failure for policy in policies)
@@ -1487,7 +1498,16 @@ def tls_dashboard(session: Session, domain: Optional[Domain], rng: DateRange) ->
 
     by_day: dict[date, list[int]] = {}
     by_mx: dict[str, dict[str, int]] = {}
+    by_domain: dict[str, dict[str, Any]] = {}
     for policy in policies:
+        name = (policy.policy_domain or "unknown").lower()
+        domain_entry = by_domain.setdefault(
+            name, {"success": 0, "failure": 0, "type": policy.policy_type}
+        )
+        domain_entry["success"] += policy.total_success
+        domain_entry["failure"] += policy.total_failure
+        if policy.policy_type and not domain_entry["type"]:
+            domain_entry["type"] = policy.policy_type
         bucket = by_day.setdefault(policy.report_date, [0, 0])
         bucket[0] += policy.total_success
         bucket[1] += policy.total_failure
@@ -1548,6 +1568,19 @@ def tls_dashboard(session: Session, domain: Optional[Domain], rng: DateRange) ->
             "submitters": len({report.org_name for report in reports}),
         },
         "daily": daily,
+        "policy_domains": [
+            {
+                "domain": name,
+                "success": values["success"],
+                "failure": values["failure"],
+                "sessions": values["success"] + values["failure"],
+                "success_pct": round(values["success"] / (values["success"] + values["failure"]) * 100, 1)
+                if values["success"] + values["failure"]
+                else 0,
+                "policy_type": values["type"],
+            }
+            for name, values in sorted(by_domain.items())
+        ],
         "policies": [
             {
                 "host": host,
@@ -1580,9 +1613,19 @@ def tls_dashboard(session: Session, domain: Optional[Domain], rng: DateRange) ->
 
 def _tls_report_row(report: TlsReport, session: Session) -> dict[str, Any]:
     domain = session.get(Domain, report.domain_id)
+    domains = sorted(
+        {
+            policy.policy_domain
+            for policy in session.exec(
+                select(TlsPolicy).where(TlsPolicy.tls_report_id == report.id)
+            ).all()
+            if policy.policy_domain
+        }
+    )
     provider = provider_for(report.org_name)
     return {
         "id": report.id,
+        "domains": domains,
         "kind": "tls",
         "domain": domain.name if domain else None,
         "org": report.org_name,
@@ -1614,7 +1657,15 @@ def tls_reports_page(
     page_size = max(1, min(page_size, 200))
     conditions: list[Any] = []
     if domain is not None:
-        conditions.append(TlsReport.domain_id == domain.id)
+        policy_ids = session.exec(
+            select(TlsPolicy.tls_report_id).where(
+                or_(
+                    TlsPolicy.domain_id == domain.id,
+                    func.lower(TlsPolicy.policy_domain) == domain.name.lower(),
+                )
+            )
+        ).all()
+        conditions.append(TlsReport.id.in_(set(policy_ids)))
     total = _one_int(session, select(func.count(TlsReport.id)).where(*conditions))
     rows = session.exec(
         select(TlsReport)

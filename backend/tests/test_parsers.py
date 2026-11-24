@@ -191,6 +191,7 @@ def test_dmarcbis_policy_fields():
     xml = b"""<feedback>
       <report_metadata>
         <org_name>example.org</org_name><email>dmarc@example.org</email>
+        <error>Invalid rua destination</error>
         <report_id>dmarcbis-1</report_id>
         <date_range><begin>1700000000</begin><end>1700086400</end></date_range>
       </report_metadata>
@@ -214,3 +215,4 @@ def test_dmarcbis_policy_fields():
     assert report.policy_np == "none"
     assert report.policy_testing == "y"
     assert report.policy_discovery == "treewalk"
+    assert report.report_errors == ["Invalid rua destination"]

@@ -146,11 +146,54 @@ jobs:
     needs: publish
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Skip if release already exists
+        id: exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; leaving it unchanged."
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate GitHub fallback notes
+        if: steps.exists.outputs.present != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          : > fallback-notes.md
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes"             -f tag_name="$TAG"             -f target_commitish="$GITHUB_SHA"             --jq .body > fallback-notes.md 2>/dev/null || {
+              echo "GitHub generated notes were unavailable; the release will use a short fallback." >&2
+            }
+
+      - name: Generate release notes
+        if: steps.exists.outputs.present != 'true'
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_API_URL: ${{ vars.DEEPSEEK_API_URL }}
+          DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/generate_release_notes.py             --tag "$TAG"             --fallback fallback-notes.md             --output release-body.md
+
       - name: Create release from tag
+        if: steps.exists.outputs.present != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -159,11 +202,6 @@ jobs:
           DIGEST: ${{ needs.publish.outputs.digest }}
         run: |
           set -euo pipefail
-
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists; leaving it unchanged."
-            exit 0
-          fi
 
           version="${TAG#v}"
           if [[ "$TAG" == *-* ]]; then
@@ -174,16 +212,17 @@ jobs:
             extra=(--latest)
           fi
 
-          notes=$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-            -f tag_name="$TAG" \
-            -f target_commitish="$GITHUB_SHA" \
-            --jq .body)
+          previous=$(git describe --tags --abbrev=0 --match 'v*.*.*' "${TAG}^" 2>/dev/null || true)
 
           {
-            printf '%s\n\n' "$notes"
-            printf -- '---\n\n'
+            cat release-body.md
+            printf '\n---\n\n'
+            if [[ -n "$previous" ]]; then
+              printf '**Full Changelog**: %s/%s/compare/%s...%s\n\n' \
+                "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$previous" "$TAG"
+            fi
             printf '**Container image:** %s\n\n' "$image_line"
-            printf '**Digest:** `%s`\n' "$DIGEST"
+            printf '**Digest:** \`%s\`\n' "$DIGEST"
           } > release-notes.md
 
           gh release create "$TAG" \

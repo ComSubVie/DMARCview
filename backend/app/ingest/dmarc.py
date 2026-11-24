@@ -56,6 +56,7 @@ class DmarcReport:
     policy_adkim: Optional[str] = None
     policy_aspf: Optional[str] = None
     policy_fo: Optional[str] = None
+    report_errors: list[str] = field(default_factory=list)
     records: list[DmarcRecord] = field(default_factory=list)
 
     @property
@@ -197,6 +198,11 @@ def parse_dmarc(data: bytes) -> DmarcReport:
         policy_adkim=_text(published, "adkim"),
         policy_aspf=_text(published, "aspf"),
         policy_fo=_text(published, "fo"),
+        report_errors=[
+            (node.text or "").strip()
+            for node in _children(metadata, "error")
+            if (node.text or "").strip()
+        ],
     )
 
     for node in _children(root, "record"):

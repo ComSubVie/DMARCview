@@ -98,6 +98,20 @@ function ReportDrawer({ id, onClose }: { id: number; onClose: () => void }) {
             </span>
           </div>
 
+          {report.errors.length > 0 ? (
+            <div className="report-errors">
+              <strong>Reporter warnings</strong>
+              <ul>
+                {report.errors.map((message) => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+              <span className="tiny muted">
+                RFC 9990 report errors are data-quality signals, not DMARC failures.
+              </span>
+            </div>
+          ) : null}
+
           <div>
             <h3 className="section-title">
               {formatNumber(report.message_count)} messages · {formatNumber(report.aligned_count)} aligned ·{" "}
@@ -185,6 +199,11 @@ function Row({ report, onOpen }: { report: ReportRow; onOpen: () => void }) {
               </span>
               <CopyButton value={report.report_id} label="Copy report ID" />
             </div>
+            {report.errors ? (
+              <Badge tone="warn">
+                {report.errors} reporter warning{report.errors === 1 ? "" : "s"}
+              </Badge>
+            ) : null}
           </div>
         </div>
       </td>

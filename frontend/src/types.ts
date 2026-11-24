@@ -392,6 +392,7 @@ export interface ReportRow {
   sources: number;
   policy: string | null;
   source: string;
+  errors?: number;
   ingested_at: string;
 }
 
@@ -419,13 +420,14 @@ export interface ReportRecord {
   reason: { type: string | null; comment: string | null } | null;
 }
 
-export interface ReportDetail extends Omit<ReportRow, "aligned_pct" | "policy" | "records" | "sources"> {
+export interface ReportDetail extends Omit<ReportRow, "aligned_pct" | "policy" | "records" | "sources" | "errors"> {
   message_count: number;
   aligned_count: number;
   failed_count: number;
   source_count: number;
   org_email: string | null;
   received_at: string | null;
+  errors: string[];
   raw_sha256: string;
   policy: {
     domain: string | null;
@@ -651,6 +653,25 @@ export interface DomainSettings {
   expected_report_hours: number;
   dns_checks_enabled: boolean;
   checks_muted_until: string | null;
+  updated_at: string | null;
+}
+
+export interface FleetViewFilters {
+  tag?: string;
+  policy?: string;
+  health?: string;
+  only_failing?: boolean;
+  max_alignment?: string;
+  max_tls?: string;
+  sort_key?: string;
+  sort_dir?: "asc" | "desc";
+}
+
+export interface SavedFleetView {
+  id: number;
+  name: string;
+  filters: FleetViewFilters;
+  created_at: string | null;
   updated_at: string | null;
 }
 

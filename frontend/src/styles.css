@@ -3850,3 +3850,98 @@ table.data td.right {
   font-size: 12px;
   padding: 0 8px;
 }
+
+/* Saved fleet views */
+.fleet-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 12px;
+}
+
+.fleet-controls select,
+.fleet-controls input[type="number"],
+.fleet-save input {
+  height: 32px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 12px;
+  padding: 0 8px;
+}
+
+.fleet-controls select {
+  max-width: 160px;
+}
+
+.fleet-controls input[type="number"] {
+  width: 66px;
+}
+
+.fleet-check,
+.fleet-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.fleet-check input {
+  accent-color: var(--green);
+}
+
+.fleet-view-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.fleet-save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 20px 12px;
+}
+
+.fleet-save input {
+  width: 220px;
+}
+
+@media (max-width: 760px) {
+  .fleet-view-actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .fleet-view-actions select {
+    flex: 1;
+  }
+}
+
+
+.report-errors {
+  margin: 4px 0 8px;
+  padding: 11px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid #f3dfbd;
+  background: #fffaf1;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.report-errors strong {
+  display: block;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.report-errors ul {
+  margin: 0 0 5px;
+  padding-left: 17px;
+  line-height: 1.55;
+}
