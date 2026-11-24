@@ -345,5 +345,38 @@ class IpMeta(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class AlertRule(SQLModel, table=True):
+    """One configurable alert rule, seeded from the built-in kinds."""
+
+    __tablename__ = "alert_rules"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    kind: str = Field(unique=True, index=True, max_length=64)
+    enabled: bool = Field(default=True)
+    condition: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    cooldown_minutes: int = Field(default=60)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class AlertEvent(SQLModel, table=True):
+    """A fired (and later resolved) incident."""
+
+    __tablename__ = "alert_events"
+    __table_args__ = (Index("ix_alert_events_rule_domain", "rule_id", "domain_id"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    rule_id: int = Field(foreign_key="alert_rules.id", index=True)
+    domain_id: int = Field(foreign_key="domains.id", index=True)
+    dedupe_key: str = Field(max_length=160)
+    severity: str = Field(default="warning", max_length=16)
+    title: str = Field(max_length=255)
+    message: str = Field(sa_column=Column(Text))
+    payload: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    triggered_at: datetime = Field(default_factory=utcnow, index=True)
+    resolved_at: Optional[datetime] = Field(default=None)
+    delivered_at: Optional[datetime] = Field(default=None)
+    delivery_error: Optional[str] = Field(default=None, sa_column=Column(Text))
+
+
 def dump_json(value: Any) -> bytes:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

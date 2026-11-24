@@ -10,14 +10,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from sqlalchemy import text
+from sqlmodel import Session
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import jobs, poller
+from .alerts.service import ensure_rules
 from .config import get_settings
 from .db import get_engine, init_db
 from .routers import api as api_router
 from .routers import auth as auth_router
+from .routers import alerts as alerts_router
 from .routers import health as health_router
 from .routers import ingest as ingest_router
 from .version import VERSION
@@ -33,6 +36,8 @@ log = logging.getLogger("dmarcview")
 async def lifespan(app: FastAPI):
     settings = get_settings()
     init_db()
+    with Session(get_engine()) as session:
+        ensure_rules(session)
     if settings.secret_key == "dev-insecure-secret-change-me" and settings.env == "production":
         log.error("SECRET_KEY is still the development default — set a random SECRET_KEY")
     if not settings.has_credentials:
@@ -108,6 +113,7 @@ def create_app() -> FastAPI:
     app.include_router(api_router.router)
     app.include_router(ingest_router.router)
     app.include_router(health_router.router)
+    app.include_router(alerts_router.router)
 
     dist = settings.dist_dir
 

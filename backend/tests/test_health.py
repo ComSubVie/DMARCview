@@ -584,6 +584,7 @@ def test_storage_and_jobs_endpoints(auth_client, session: Session):
         "health_checks",
         "transport_probes",
         "ptr_enrichment",
+        "alerts",
     }
 
 

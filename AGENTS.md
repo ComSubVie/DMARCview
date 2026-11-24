@@ -48,12 +48,13 @@ docker build -t dmarcview .
 | Path | Contents |
 | --- | --- |
 | `backend/app/ingest/` | MIME unwrap → DMARC XML / TLS-RPT JSON parsers → persistence; JMAP client |
+| `backend/app/alerts/` | Rule specs and evaluators, notification channels, evaluation/dedupe service |
 | `backend/app/health/` | DNS/HTTP clients, checks, DKIM selector discovery, TLS probes, engine, persistence |
 | `backend/app/analytics.py` | Read-side aggregation for the dashboard, reports and TLS pages |
-| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `ingest`, `health` |
-| `backend/app/jobs.py` | In-process scheduler (health checks, probes, PTR enrichment) |
+| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `ingest`, `health`, `alerts` |
+| `backend/app/jobs.py` | In-process scheduler (health checks, probes, PTR enrichment, alert evaluation) |
 | `backend/app/models.py` | SQLModel schema — the source of truth for Alembic |
-| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs) |
+| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts) |
 | `frontend/src/` | `pages/`, `components/`, `state.tsx`, `api.ts`, `types.ts`, `styles.css` |
 | `samples/` | Hand-written CRLF `.eml` fixtures used by the test suite |
 | `docs/` | Roadmap and screenshots |
@@ -89,6 +90,18 @@ Checks receive injected `dns`/`http` clients; tests must use fakes, never the ne
 
 **TLS probes verify certificates via certifi** (interpreter CA stores are often stale). They
 never authenticate, never send mail, and only connect to MX hosts plus configured targets.
+
+**Alerts dedupe on `(rule, domain, dedupe_key)` while an incident is open.** A new episode is
+suppressed until the rule's cooldown passes; when the condition clears the open event is
+resolved and a resolution notice is sent. Do not create a second open event for the same key.
+
+**Alert channel credentials live only in the environment** (`SMTP_*`, `TELEGRAM_*`,
+`SIGNAL_*`, `WEBHOOK_*`). Never persist secrets in `alert_rules` or log them. Channel
+delivery must never block ingestion; failures are recorded on the event.
+
+**A new alert kind needs three things:** a `RuleSpec` in `alerts/specs.py` (fields + defaults,
+which seed `alert_rules`), an evaluator in `alerts/rules.py`, and a test. Thresholds are
+clamped by `RuleSpec.clean()`; the API rejects unknown condition keys.
 
 **Tests are isolated from the developer's `.env`.** `APP_ENV=test` disables dotenv loading.
 GeoIP is stubbed in `tests/conftest.py`, so the suite passes without the gitignored `.mmdb`.
@@ -136,7 +149,7 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 ## Roadmap
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
-the user asks for them. The next planned slice is alerting (SMTP + Telegram, Signal later).
+the user asks for them. The next planned slice is share links and export.
 
 ## Security expectations
 

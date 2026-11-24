@@ -108,6 +108,27 @@ export const api = {
   storage: () => request<import("./types").StorageInfo>("/storage"),
   jobs: () => request<import("./types").JobsResponse>("/jobs"),
 
+  alerts: () => request<import("./types").AlertsPayload>("/alerts"),
+  updateAlertRule: (
+    id: number,
+    payload: {
+      enabled?: boolean;
+      condition?: Record<string, number>;
+      cooldown_minutes?: number;
+    },
+  ) =>
+    request<import("./types").AlertsPayload>(`/alerts/rules/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  runAlerts: () =>
+    request<import("./types").AlertRunResult>("/alerts/run", { method: "POST" }),
+  testAlertChannel: (channel?: string) =>
+    request<import("./types").AlertTestResult>("/alerts/test", {
+      method: "POST",
+      body: JSON.stringify({ channel }),
+    }),
+
   ingestStatus: () => request<IngestStatus>("/ingest/status"),
   syncNow: () => request<{ started: boolean }>("/ingest/run", { method: "POST" }),
   probe: () => request<ProbeResult>("/ingest/probe", { method: "POST" }),

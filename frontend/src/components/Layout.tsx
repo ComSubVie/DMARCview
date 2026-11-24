@@ -1,6 +1,6 @@
 import { CalendarRange, Globe2, LogOut, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useData } from "../state";
 import { formatPct, relativeTime } from "../lib/format";
@@ -8,8 +8,9 @@ import { formatPct, relativeTime } from "../lib/format";
 const NAV = [
   { to: "/", label: "Overview", end: true },
   { to: "/health", label: "Health", end: false },
+  { to: "/alerts", label: "Alerts", end: false },
   { to: "/reports", label: "Reports", end: false },
-  { to: "/tls", label: "TLS delivery", end: false },
+  { to: "/tls", label: "TLS", end: false },
   { to: "/ingest", label: "Ingestion", end: false },
 ];
 
@@ -35,6 +36,7 @@ export function Layout({
     toastMessage,
   } = useData();
   const navigate = useNavigate();
+  const location = useLocation();
   const [signingOut, setSigningOut] = useState(false);
 
   const pct = dashboard?.kpis.aligned_pct;
@@ -104,6 +106,7 @@ export function Layout({
         </div>
       </header>
 
+      {location.pathname !== "/alerts" ? (
       <div className="toolbar">
         <label className="select strong">
           <Globe2 size={15} />
@@ -146,6 +149,7 @@ export function Layout({
           </span>
         </div>
       </div>
+      ) : null}
 
       {children}
 

@@ -3,6 +3,7 @@ import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
 import { api } from "./api";
 import { Layout } from "./components/Layout";
 import { DashboardPage } from "./pages/Dashboard";
+import { AlertsPage } from "./pages/Alerts";
 import { HealthPage } from "./pages/Health";
 import { IngestPage } from "./pages/Ingest";
 import { Login } from "./pages/Login";
@@ -78,6 +79,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/health" element={<HealthPage />} />
+            <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/tls" element={<TlsPage />} />
             <Route path="/ingest" element={<IngestPage />} />

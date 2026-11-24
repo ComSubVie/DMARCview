@@ -1,31 +1,33 @@
 # Roadmap
 
-_Rev 3 · 24 November 2026 · after shipping Phase 0 and domain/transport health_
+_Rev 4 · 24 November 2026 · after shipping alerting_
 
-v1 answered **"what happened?"**; this iteration adds **"is my configuration correct?"**.
-Next comes **"tell me when it changes"** (alerting), then read-only sharing and export.
+v1 answered **"what happened?"**; v1.1 added **"is my configuration correct?"**; v1.2 adds
+**"tell me when it changes"**. Next comes read-only sharing and export, then retention.
 
-## Delivered in this iteration
+## Delivered so far
 
 | Area | What shipped |
 | --- | --- |
 | **Migrations** | Alembic baseline (`0001`) plus `0002` for the new tables. v1 databases are stamped automatically and upgraded in place on start. `python -m app.cli migrate`. |
-| **Scheduler** | In-process job runner with overlap guards, jitter, initial delay and `job_runs` history. Jobs: health checks, transport probes, PTR enrichment. No Redis/Celery. |
+| **Scheduler** | In-process job runner with overlap guards, jitter, initial delay and `job_runs` history. Jobs: health checks, transport probes, PTR enrichment, alert evaluation. No Redis/Celery. |
 | **Domain settings** | Per-domain DKIM selectors, extra probe targets, expected report interval, check toggle — with a settings form on the Health page. |
 | **Domain health** | Live checks for DMARC (incl. drift vs. reports), SPF (recursive, 10-lookup/2-void limits), DKIM (selectors, key size), MX, MTA-STS (policy fetch, mode/mx/max_age), TLS-RPT, DNSSEC (AD), BIMI. Snapshot history, dashboard card, full Health page. |
 | **Transport probes** | MX :25 (STARTTLS) plus configurable submission/IMAP/HTTPS targets. Chain and hostname verification, expiry days, TLS version/cipher, DANE/TLSA matching. No auth, no mail sent. |
 | **PTR enrichment** | Reverse DNS for sending IPs, shown under the source in the Sending sources table. |
 | **Storage & backups** | `python -m app.cli backup` (consistent SQLite snapshot, integrity-checked, rotated), storage/growth panel, jobs panel. Retention stays **off by default**. |
-| **Tests** | 64 backend tests, including every health check against fixtures, probe parsing, a local TLS server, migration upgrade path and the health API. |
+| **Alerting** | Nine rules over reports, health snapshots and probes; hourly + manual evaluation; dedupe/cooldown/resolution; SMTP, Telegram, Signal (signal-cli) and signed webhook channels; editable thresholds; incident history. |
+| **Tests** | 72 backend tests, including every health check against fixtures, probe parsing, a local TLS server, migration upgrade path, the health API, and alert evaluation/dedupe/resolution with mocked delivery. |
 
 Known limits: DNSSEC relies on the resolver's AD flag (no explicit chain validation);
-BIMI verifies presence only; probes require outbound port 25; alerting is not built yet.
+BIMI verifies presence only; probes require outbound port 25; alert rules are global (no
+per-domain overrides or mute yet) and failed deliveries are recorded but not retried.
 
 ## Decisions locked in (24 Nov 2026)
 
 | # | Decision | Consequence |
 | --- | --- | --- |
-| 1 | **SMTP** alerts, **Telegram** and **Signal** as extra channels | Phase 1 ships SMTP + Telegram; Signal behind the same interface once a `signal-cli` sidecar exists. |
+| 1 | **SMTP** alerts, **Telegram** and **Signal** as extra channels | Delivered: SMTP, Telegram, Signal (via a `signal-cli` sidecar) and a signed webhook. |
 | 2 | App **may probe MX on 25** (and other mail ports) | Delivered: live STARTTLS, certificate and DANE checks. |
 | 3 | **No off-box backup target yet**, retention undecided | Keep-forever default, local rolling snapshots, growth panel; retention stays opt-in. |
 | 4 | **Single admin**; read-only **share links without authentication** | OIDC/SSO stays dropped. Share links (Phase 3) use signed, revocable tokens. |
@@ -34,63 +36,46 @@ BIMI verifies presence only; probes require outbound port 25; alerting is not bu
 
 | Phase | Theme | Effort | Status |
 | --- | --- | --- | --- |
-| **1** | Alerting: rules engine + SMTP/Telegram (Signal later) | 6–8 d | next |
-| **3** | Share links, export, fleet comparison table | 6–8 d | planned |
+| **3** | Share links, export, fleet comparison table | 6–8 d | next |
 | **4** | Forensic (RUF) reports | 3–4 d | planned |
 | **5** | Platform: Postgres, IMAP, API tokens, metrics | 8–10 d | trigger-based |
 | **6** | Analytics depth: identities, anomalies, DMARCbis | 6–10 d | planned |
 
-≈ **29–40 focused engineer-days** remaining, tests included. Phase 1 is the only piece that
-turns the product from pull to push; everything after it is optional depth.
+≈ **23–32 focused engineer-days** remaining, tests included. Alerting was the only piece that
+turns the product from pull to push; everything now is depth and sharing.
 
 ---
 
-## Phase 1 — Alerting (6–8 days)
+## Delivered: alerting (v1.2)
 
-### Rules engine
+Nine rules, evaluated hourly and from the Alerts page, over reports, health snapshots and
+probes. Incidents are deduplicated while open, repeat episodes respect a cooldown, and a
+resolution notice is sent when the condition clears. Thresholds, enablement and cooldown are
+editable per rule.
 
-```text
-alert_rules(id, name, kind, domain_id?, condition JSON, severity, enabled, cooldown_minutes)
-alert_channels(id, kind, config JSON, enabled)
-alert_events(id, rule_id, domain_id, dedupe_key, severity, payload JSON,
-             triggered_at, resolved_at, delivered_at, error)
-```
+Schema: `alert_rules` (kind, condition JSON, enabled, cooldown) and `alert_events`
+(rule, domain, dedupe_key, severity, payload, triggered_at, resolved_at, delivered_at,
+delivery_error). Channel credentials stay in the environment, never in SQLite.
 
-- Evaluate hourly **and** after a sync; the first run warms a baseline instead of firing on
-  30 days of history.
-- Cooldown/dedupe on `(rule, domain, dedupe_key)`: one message per incident plus a resolution
-  notice. Delivery failures are recorded, retried with backoff, never block ingestion.
-- Per-domain overrides, "mute for N days", and a "send test" button per channel.
-
-| Rule | Default condition | Uses |
+| Rule | Default | Uses |
 | --- | --- | --- |
-| `compliance_drop` | aligned < 95 % over 24 h and ≥ 10 messages | reports |
-| `new_source` | unseen IP/domain sends ≥ 5 messages | reports |
-| `dkim_break` | a previously aligned source starts failing DKIM | reports |
-| `tls_failure` | any failed sessions, or success < 95 % over 24 h | TLS-RPT |
-| `report_gap` | no reports for `expected_report_hours` (48 h) | reports + domain settings |
-| `volume_spike` | daily messages > 3× the trailing 28-day median | reports |
-| `policy_drift` | live DNS policy ≠ latest reported policy, or record changed | **health snapshots** |
-| `cert_expiry` | any probe target < 21 days (warn) / < 7 days (fail) | **probes** |
-| `starttls_broken` | a previously passing probe now fails | **probes** |
+| `compliance_drop` | aligned < 95 %, ≥ 10 messages, 24 h | reports |
+| `new_source` | unseen IP, ≥ 5 messages, 24 h | reports |
+| `dkim_break` | previously passing source now fails, 14 d lookback | reports |
+| `tls_failure` | TLS success < 95 %, ≥ 5 sessions | TLS-RPT |
+| `report_gap` | no report within expected interval + grace | reports + settings |
+| `volume_spike` | ≥ 3× trailing 28-day median, ≥ 20 messages | reports |
+| `policy_drift` | DNS p ≠ latest reported p | health snapshots |
+| `cert_expiry` | ≤ 21 d (warning), < 7 d (critical) | probes |
+| `starttls_broken` | probe fails without a certificate error | probes |
 
-The last three plug straight into data this iteration already stores.
+Channels: SMTP, Telegram, Signal (signal-cli REST), webhook (HMAC-signed). "Run now" and a
+per-channel "Send test" live on the Alerts page; with no channel configured incidents are
+still recorded and the page names the missing variables.
 
-### Channels
-
-A `Channel` protocol (`send(alert) -> DeliveryResult`), one module per transport.
-
-| Channel | Config | Notes |
-| --- | --- | --- |
-| **SMTP** | `SMTP_HOST`, `SMTP_PORT` (587/465), `SMTP_SECURITY`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `ALERT_TO` | Default. stdlib `smtplib` + `EmailMessage`; works with Stalwart submission or any relay. |
-| **Telegram** | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Bot API `sendMessage`; HTML, 4096-char split, honour 429 `retry_after`. |
-| **Signal** | `SIGNAL_API_URL`, `SIGNAL_NUMBER`, `SIGNAL_RECIPIENTS` | Needs a self-hosted `signal-cli-rest-api` sidecar and a linked number. Documented, not bundled — adds ~1 day once the sidecar exists. |
-| **Webhook** | `WEBHOOK_URL`, `WEBHOOK_SECRET` | HMAC-signed JSON; doubles as ntfy/Matrix hook. |
-
-### UI & acceptance
-Alerts page with rules, channel cards, test buttons, event history and delivery errors; a
-header bell for unresolved alerts. A rule fires once, survives restart, respects cooldown,
-resolves, and never double-sends. Tests freeze the clock and mock each channel.
+Deliberately left for later: per-domain overrides, "mute for N days", a header bell for
+unresolved incidents, and delivery retry with backoff (failures are recorded on the event
+and shown in the UI).
 
 ---
 
@@ -205,9 +190,9 @@ proxy; neither is scheduled.
 
 ## Still open
 
-1. **Signal:** is a `signal-cli` sidecar already running, or should Signal follow SMTP +
-   Telegram?
-2. **Off-box backup:** when a target appears, the local snapshot format is what it should
+1. **Off-box backup:** when a target appears, the local snapshot format is what it should
    sync; name the target before Phase 3 closes.
-3. **Retention:** revisit once the storage panel shows real growth; the mechanism is not
+2. **Retention:** revisit once the storage panel shows real growth; the mechanism is not
    built, only the numbers are.
+3. **Alert follow-ups:** whether per-domain overrides and delivery retry are worth the
+   complexity after real-world use.

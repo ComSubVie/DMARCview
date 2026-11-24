@@ -30,3 +30,6 @@ geoip/*.mmdb
 # Local buildx/docker config used for verification
 .docker-config/
 .buildx-config/
+
+*.swp
+*.swo

@@ -93,6 +93,26 @@ class Settings:
     backup_keep: int = 14
     jobs_initial_delay_seconds: int = 25
 
+    # Alerts
+    alerts_enabled: bool = True
+    alert_interval_minutes: int = 60
+    alert_cooldown_minutes: int = 60
+    alert_base_url: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_security: str = "starttls"  # starttls | ssl | none
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    alert_to: str = ""
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    signal_api_url: str = ""
+    signal_number: str = ""
+    signal_recipients: str = ""
+    webhook_url: str = ""
+    webhook_secret: str = ""
+
     frontend_dist: str = ""
     ingest_token: str = ""
 
@@ -159,6 +179,24 @@ def _build_settings() -> Settings:
         ptr_enrichment_enabled=_env_bool("PTR_ENRICHMENT_ENABLED", True),
         backup_keep=max(0, _env_int("BACKUP_KEEP", 14)),
         jobs_initial_delay_seconds=max(5, _env_int("JOBS_INITIAL_DELAY_SECONDS", 25)),
+        alerts_enabled=_env_bool("ALERTS_ENABLED", True),
+        alert_interval_minutes=max(5, _env_int("ALERT_INTERVAL_MINUTES", 60)),
+        alert_cooldown_minutes=max(0, _env_int("ALERT_COOLDOWN_MINUTES", 60)),
+        alert_base_url=_env("ALERT_BASE_URL").rstrip("/"),
+        smtp_host=_env("SMTP_HOST"),
+        smtp_port=_env_int("SMTP_PORT", 587),
+        smtp_security=_env("SMTP_SECURITY", "starttls").lower(),
+        smtp_username=_env("SMTP_USERNAME"),
+        smtp_password=_env("SMTP_PASSWORD"),
+        smtp_from=_env("SMTP_FROM"),
+        alert_to=_env("ALERT_TO"),
+        telegram_bot_token=_env("TELEGRAM_BOT_TOKEN"),
+        telegram_chat_id=_env("TELEGRAM_CHAT_ID"),
+        signal_api_url=_env("SIGNAL_API_URL").rstrip("/"),
+        signal_number=_env("SIGNAL_NUMBER"),
+        signal_recipients=_env("SIGNAL_RECIPIENTS"),
+        webhook_url=_env("WEBHOOK_URL"),
+        webhook_secret=_env("WEBHOOK_SECRET"),
         frontend_dist=_env("FRONTEND_DIST"),
         ingest_token=_env("INGEST_TOKEN"),
         root_path=_env("ROOT_PATH").rstrip("/"),

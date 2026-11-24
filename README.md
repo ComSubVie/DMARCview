@@ -29,16 +29,23 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
   10-lookup limit), DKIM selectors, MX, MTA-STS (policy-id validation), TLS-RPT, DNSSEC and BIMI.
   Because outbound port 25 is allowed, it also probes MX, submission and IMAP endpoints:
   STARTTLS, TLS version, certificate chain, hostname, expiry and DANE/TLSA.
-- **Runs itself.** An in-process scheduler re-checks every few hours, reverse-resolves sending
-  IPs, and reports every run in the UI. No cron, Redis or Celery.
+- **Tells you when it changes.** Nine alert rules cover compliance drops, new senders, DKIM
+  breaks, TLS failures, silent report gaps, volume spikes, policy drift and certificate expiry,
+  delivered over SMTP, Telegram, Signal (signal-cli) or a signed webhook.
+- **Runs itself.** An in-process scheduler re-checks every few hours, evaluates alerts,
+  reverse-resolves sending IPs, and reports every run in the UI. No cron, Redis or Celery.
 - **Multi-domain.** A fleet view plus a per-domain drill-down with a domain picker.
 - **Report browser.** Search, filter, inspect every record, download the original XML/JSON.
 - **Boring to operate.** One container, one SQLite file, no external services, no
   telemetry, no third-party IP lookups (GeoIP is local).
 
-| Domain health | TLS delivery |
+| Domain health | Alerts |
 | --- | --- |
-| ![Domain health](docs/screenshots/health.png) | ![TLS delivery](docs/screenshots/tls.png) |
+| ![Domain health](docs/screenshots/health.png) | ![Alerts](docs/screenshots/alerts.png) |
+
+| TLS delivery | Report browser |
+| --- | --- |
+| ![TLS delivery](docs/screenshots/tls.png) | ![Reports](docs/screenshots/reports.png) |
 
 ---
 
@@ -117,7 +124,7 @@ Releases are published with SBOM and provenance attestations. GHCR packages star
 Publish a release with:
 
 ```bash
-git tag v1.1.4 && git push origin v1.1.4
+git tag v1.2.0 && git push origin v1.2.0
 ```
 
 The tag workflow builds and tests first, then publishes the image and creates the GitHub
@@ -206,6 +213,18 @@ All settings are environment variables (`.env` is loaded automatically).
 | `PTR_ENRICHMENT_ENABLED` | `true` | Reverse-resolve sending IPs in the background. |
 | `JOBS_INITIAL_DELAY_SECONDS` | `25` | Delay before the first scheduled run after boot. |
 | `BACKUP_KEEP` | `14` | Local snapshots retained by `app.cli backup`. |
+| `ALERTS_ENABLED` | `true` | Run the alert evaluator on a schedule. |
+| `ALERT_INTERVAL_MINUTES` | `60` | Alert evaluation cadence. |
+| `ALERT_COOLDOWN_MINUTES` | `60` | Minimum gap between repeated episodes of one finding. |
+| `ALERT_BASE_URL` | — | Public URL used for links in notifications. |
+| `SMTP_HOST` / `SMTP_PORT` | — / `587` | SMTP relay for email alerts. |
+| `SMTP_SECURITY` | `starttls` | `starttls`, `ssl` or `none`. |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | — | Optional SMTP authentication. |
+| `SMTP_FROM` | — | Sender address for alerts. |
+| `ALERT_TO` | — | Comma-separated recipients. |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | Telegram delivery. |
+| `SIGNAL_API_URL` / `SIGNAL_NUMBER` / `SIGNAL_RECIPIENTS` | — | Signal via a signal-cli REST sidecar. |
+| `WEBHOOK_URL` / `WEBHOOK_SECRET` | — | JSON webhook with an HMAC signature. |
 | `MONTHLY_MESSAGE_ALERT` | `10000` | Progress-bar target on the dashboard. |
 | `GEOIP_DB` | auto | Path to a `.mmdb`; otherwise `data/geoip/*.mmdb`. |
 | `DATA_DIR` | `./data` | Database location outside Docker. |
@@ -301,6 +320,10 @@ Everything below requires the session cookie (obtained via `POST /api/auth/login
 | `GET` | `/api/domain-health/fleet` | Health summary per domain |
 | `GET` | `/api/domain-health/history?domain=` | Snapshot history |
 | `GET/PUT` | `/api/domains/{name}/settings` | DKIM selectors, probe targets, cadence |
+| `GET` | `/api/alerts` | Rules, channels, incidents and last evaluation |
+| `PUT` | `/api/alerts/rules/{id}` | Enable/disable, thresholds and cooldown |
+| `POST` | `/api/alerts/run` | Evaluate all rules now |
+| `POST` | `/api/alerts/test` | Send a test notification |
 | `GET` | `/api/storage` | Database, archive and backup sizes |
 | `GET` | `/api/jobs` | Scheduled jobs and their last run |
 | `GET` | `/api/health` | Unauthenticated liveness probe |
@@ -327,7 +350,8 @@ Everything below requires the session cookie (obtained via `POST /api/auth/login
 
 - **Backend** `backend/app`: FastAPI, SQLModel/SQLite (WAL), Alembic migrations, httpx JMAP
   client, DNS checks on dnspython, certificate parsing with `cryptography`. Report parsers use
-  only stdlib `email`/`xml`/`zipfile`/`gzip`.
+  only stdlib `email`/`xml`/`zipfile`/`gzip`. Alert rules live in `app/alerts`, evaluate from
+  the scheduler and deliver through SMTP/Telegram/Signal/webhook without extra services.
 - **Frontend** `frontend/src`: React 19, React Router, Recharts, hand-written CSS design
   system (no UI framework), self-hosted Inter + Space Grotesk.
 - **Storage**: one SQLite file plus raw XML/JSON blobs. A few thousand reports per domain
@@ -337,9 +361,9 @@ Everything below requires the session cookie (obtained via `POST /api/auth/login
 
 ## Roadmap
 
-v1.1 already adds live DNS and transport health checks. Next up: alerting over SMTP /
-Telegram / Signal, then unauthenticated read-only share links and export. Sequencing, effort
-estimates and the decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
+v1.2 adds alerting over SMTP, Telegram, Signal and webhooks. Next up: unauthenticated
+read-only share links, export and retention. Sequencing, effort estimates and the decisions
+behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
 
@@ -347,7 +371,7 @@ estimates and the decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.m
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (64 tests: parsers, ingestion, API, auth, mocked JMAP, health checks and probes)
+# backend tests (72 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -392,6 +416,40 @@ failure with the connection error — DNS checks are unaffected.
 Checks are cached in `domain_health_snapshots` (drift history) and `transport_probes`; the
 scheduler runs them every six hours and `Re-check now` forces a run. Results degrade to
 *unknown*, never *fail*, when DNS or the network is unavailable.
+
+## Alerts
+
+The **Alerts** page evaluates nine rules over the reports, health snapshots and probes:
+
+| Rule | Fires when |
+| --- | --- |
+| Compliance drop | aligned DMARC below the threshold (95 % over 24 h by default) |
+| New sending source | an unseen IP sends at least 5 messages |
+| DKIM break | a source that passed DKIM starts failing it |
+| TLS delivery failure | TLS-RPT success rate below 95 % |
+| Reports stopped | no report within the domain's expected interval (48 h default) |
+| Volume spike | daily volume at least 3× the trailing 28-day median |
+| Policy drift | DNS DMARC policy differs from what receivers report |
+| Certificate expiring | a probed certificate is inside the warning window (21 d) |
+| STARTTLS broken | a probe target fails to negotiate TLS (certificate failures go to the rule above) |
+
+Evaluation runs hourly and on demand. Incidents are deduplicated while open, repeated
+episodes are suppressed by a cooldown, and a resolution notice is sent when the condition
+clears. Thresholds, enablement and cooldown are editable per rule in the UI.
+
+Delivery channels are configured with environment variables only — credentials never enter
+SQLite or backups:
+
+- **SMTP** (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USERNAME`, `SMTP_PASSWORD`,
+  `SMTP_FROM`, `ALERT_TO`).
+- **Telegram** (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
+- **Signal** (`SIGNAL_API_URL`, `SIGNAL_NUMBER`, `SIGNAL_RECIPIENTS`) through a
+  [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) sidecar.
+- **Webhook** (`WEBHOOK_URL`, optional `WEBHOOK_SECRET`) with an
+  `X-DMARCView-Signature: sha256=…` header.
+
+With no channel configured the incidents are still recorded and visible; the page explains
+which variables are missing. **Send test** per channel verifies the wiring.
 
 ## Backups & retention
 

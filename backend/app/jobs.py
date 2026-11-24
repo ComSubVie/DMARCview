@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 
 from .config import get_settings
 from .db import get_engine
+from .alerts.service import evaluate as evaluate_alerts
 from .health.dns import get_dns_client
 from .health.service import run_and_store_health, run_and_store_probes
 from .models import Domain, IpMeta, JobRun, SourceRecord, utcnow
@@ -69,6 +70,17 @@ async def job_transport_probes() -> dict:
                 log.warning("transport probe failed for %s: %s", current.name, exc)
                 errors.append(f"{current.name}: {exc}")
     return {"domains": len(domains), "targets": targets, "ok": ok, "failed": failed, "errors": errors[:5]}
+
+
+async def job_alerts() -> dict:
+    with Session(get_engine()) as session:
+        summary = await evaluate_alerts(session)
+    return {
+        "created": summary["created"],
+        "resolved": summary["resolved"],
+        "delivered": summary["delivered"],
+        "failed": summary["failed"],
+    }
 
 
 async def job_ptr_enrichment() -> dict:
@@ -138,6 +150,13 @@ def job_specs() -> list[JobSpec]:
             interval_seconds=6 * 3600,
             runner=job_ptr_enrichment,
             initial_delay=90,
+        ),
+        JobSpec(
+            name="alerts",
+            label="Alert evaluation",
+            interval_seconds=settings.alert_interval_minutes * 60,
+            runner=job_alerts,
+            initial_delay=settings.jobs_initial_delay_seconds + 45,
         ),
     ]
 
@@ -209,15 +228,22 @@ async def _loop(spec: JobSpec, stop: asyncio.Event) -> None:
 def start(stop: asyncio.Event) -> None:
     global _stop
     settings = get_settings()
-    if not settings.health_checks_enabled:
-        log.info("health check scheduler disabled (HEALTH_CHECKS_ENABLED=false)")
-        return
     _stop = stop
+    started: list[str] = []
     for spec in job_specs():
+        if spec.name == "alerts":
+            if not settings.alerts_enabled:
+                continue
+        elif not settings.health_checks_enabled:
+            continue
         if spec.name in _tasks and not _tasks[spec.name].done():
             continue
         _tasks[spec.name] = asyncio.create_task(_loop(spec, stop), name=f"job-{spec.name}")
-    log.info("scheduler started: %s", ", ".join(spec.name for spec in job_specs()))
+        started.append(spec.name)
+    if started:
+        log.info("scheduler started: %s", ", ".join(started))
+    else:
+        log.info("scheduler idle: no job enabled")
 
 
 async def stop_scheduler() -> None:

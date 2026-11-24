@@ -483,3 +483,87 @@ export interface JobsResponse {
   items: ScheduledJob[];
   scheduled: boolean;
 }
+
+
+export type AlertSeverity = "critical" | "warning" | "info";
+
+export interface AlertFieldSpec {
+  key: string;
+  label: string;
+  type: "int" | "float";
+  default: number;
+  min: number;
+  max: number;
+  unit: string;
+}
+
+export interface AlertKindSpec {
+  kind: string;
+  label: string;
+  description: string;
+  severity: AlertSeverity;
+  fields: AlertFieldSpec[];
+}
+
+export interface AlertRuleItem {
+  id: number;
+  kind: string;
+  label: string;
+  description: string;
+  severity: AlertSeverity;
+  enabled: boolean;
+  condition: Record<string, number>;
+  cooldown_minutes: number;
+  open: number;
+  last_triggered_at: string | null;
+}
+
+export interface AlertChannelStatus {
+  kind: string;
+  label: string;
+  configured: boolean;
+  target: string;
+  hint: string;
+}
+
+export interface AlertEventItem {
+  id: number;
+  kind: string;
+  domain: string;
+  severity: AlertSeverity;
+  title: string;
+  message: string;
+  payload: Record<string, unknown>;
+  triggered_at: string;
+  resolved_at: string | null;
+  delivered_at: string | null;
+  delivery_error: string | null;
+  open: boolean;
+}
+
+export interface AlertsPayload {
+  enabled: boolean;
+  rules: AlertRuleItem[];
+  kinds: AlertKindSpec[];
+  channels: AlertChannelStatus[];
+  events: AlertEventItem[];
+  unresolved: number;
+  last_run: string | null;
+}
+
+export interface AlertRunResult {
+  summary: {
+    created: number;
+    resolved: number;
+    delivered: number;
+    failed: number;
+    notified: number;
+  };
+  alerts: AlertsPayload;
+}
+
+export interface AlertTestResult {
+  ok: boolean;
+  results: { channel: string; ok: boolean; error: string | null }[];
+  error?: string;
+}
