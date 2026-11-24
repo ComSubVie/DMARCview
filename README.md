@@ -126,6 +126,9 @@ docker run --rm -v dmarcview_dmarcview-data:/data -v "$PWD":/backup alpine \
   tar czf /backup/dmarcview-backup.tgz -C /data .
 ```
 
+The running version is shown in the footer. Release images receive it from the tag through the
+`APP_VERSION` Docker build argument; source builds use the fallback in `backend/app/version.py`.
+
 ## Release notes
 
 Tagged releases get structured notes automatically. The workflow first asks GitHub for its
@@ -298,6 +301,7 @@ All settings are environment variables (`.env` is loaded automatically).
 | `DATABASE_URL` | `sqlite:///…/data/dmarc.db` | Full SQLAlchemy URL. |
 | `FRONTEND_DIST` | `frontend/dist` | Built SPA location. |
 | `ROOT_PATH` | — | Set when serving under a sub-path. |
+| `DMARCVIEW_VERSION` | source constant | Set automatically from the git tag by the release workflow; shown in the UI footer. |
 
 Generate a password hash instead of storing a plaintext password:
 
@@ -475,7 +479,7 @@ MFA and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (117 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (118 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build

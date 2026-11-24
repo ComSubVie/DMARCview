@@ -165,6 +165,11 @@ export function Layout({
 
       {children}
 
+      <footer className="app-footer">
+        <span>DMARCView {meta?.version ?? "—"}</span>
+        <span>Self-hosted · no telemetry</span>
+      </footer>
+
       {sharing ? <ShareDrawer onClose={() => setSharing(false)} /> : null}
 
       {toastMessage ? (

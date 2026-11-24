@@ -13,12 +13,17 @@ RUN npm run build
 # ---- backend --------------------------------------------------------------
 FROM python:3.13-slim AS runtime
 
+# Release builds pass the tag version here; local builds fall back to the
+# source constant in app/version.py.
+ARG APP_VERSION=""
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     DATA_DIR=/data \
     DATABASE_URL=sqlite:////data/dmarc.db \
-    FRONTEND_DIST=/app/frontend/dist
+    FRONTEND_DIST=/app/frontend/dist \
+    DMARCVIEW_VERSION=${APP_VERSION}
 
 WORKDIR /app
 

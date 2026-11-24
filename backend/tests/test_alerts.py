@@ -340,6 +340,9 @@ def test_api_rules_and_manual_run(auth_client, session: Session):
     test = auth_client.post("/api/alerts/test", json={}).json()
     assert test["ok"] is False
     assert "No matching channel" in test["error"]
+    jmap_test = auth_client.post("/api/alerts/test", json={"channel": "jmap"})
+    assert jmap_test.status_code == 200, jmap_test.text
+    assert "Unknown channel" not in str(jmap_test.json())
 
 
 def test_email_transport_selection_prefers_smtp_and_falls_back_to_jmap(monkeypatch):
@@ -354,3 +357,34 @@ def test_email_transport_selection_prefers_smtp_and_falls_back_to_jmap(monkeypat
     assert channels.email_transport(jmap) == "jmap"
     assert channels.email_transport(both) == "smtp"
     assert channels.email_transport(forced) == "jmap"
+
+
+def test_email_transport_does_not_require_alert_recipients(monkeypatch):
+    """Digest recipients are independent from ALERT_TO."""
+    import asyncio
+
+    from app.config import get_settings
+
+    settings = replace(
+        get_settings(),
+        alert_to="",
+        jmap_url="https://mail.example",
+        jmap_token="token",
+        email_transport="jmap",
+    )
+    called = {}
+
+    async def fake_jmap(*args, **kwargs):
+        called["to"] = kwargs.get("to")
+        return ChannelResult("jmap", True)
+
+    monkeypatch.setattr(channels, "send_jmap", fake_jmap)
+    result = asyncio.run(
+        channels.send_email(settings, "Digest", "body", to=["digest@example.net"])
+    )
+    assert result.ok is True
+    assert result.channel == "jmap"
+    assert called["to"] == ["digest@example.net"]
+
+    missing = asyncio.run(channels.send_email(settings, "Digest", "body"))
+    assert missing.ok is False

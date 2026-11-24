@@ -76,6 +76,26 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: docker/setup-qemu-action@v4
 
+      - name: Resolve application version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="dev-${GITHUB_SHA::7}"
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Verify source version matches tag
+        if: github.ref_type == 'tag'
+        run: |
+          expected="${GITHUB_REF_NAME#v}"
+          actual=$(python -c "import sys; sys.path.insert(0, 'backend'); from app.version import VERSION; print(VERSION)")
+          if [[ "$actual" != "$expected" ]]; then
+            echo "backend/app/version.py is $actual but tag is $expected" >&2
+            exit 1
+          fi
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -114,6 +134,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: ${{ github.event_name != 'pull_request' && 'mode=max' || 'false' }}

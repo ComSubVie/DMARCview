@@ -1,3 +1,10 @@
-"""Version string kept in one place."""
+"""Version string.
 
-VERSION = "1.13.0"
+The Docker release workflow sets ``DMARCVIEW_VERSION`` from the git tag. The
+literal fallback keeps local source/container builds useful without injecting
+a build argument.
+"""
+
+import os
+
+VERSION = os.environ.get("DMARCVIEW_VERSION", "").strip() or "1.13.1"

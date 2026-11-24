@@ -358,7 +358,8 @@ export function ReportsPage() {
           </EmptyState>
         ) : (
           <>
-            <table className="data report-table">
+            <div className="report-table-wrap">
+              <table className="data report-table">
               <thead>
                 <tr>
                   <th>Report</th>
@@ -375,8 +376,9 @@ export function ReportsPage() {
                 {data.items.map((report) => (
                   <Row key={report.id} report={report} onOpen={() => setSelected(report.id)} />
                 ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
             <div className="page-foot">
               <span>
                 Showing {from}–{to} of {formatNumber(data.total)}

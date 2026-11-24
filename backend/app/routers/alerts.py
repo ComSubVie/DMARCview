@@ -215,7 +215,7 @@ def digest_status(session: Session = Depends(get_session)) -> dict:
         "recipients": [item for item in recipients],
         "smtp_configured": channels.is_configured("smtp", settings),
         "jmap_configured": channels.is_configured("jmap", settings),
-        "email_configured": transport is not None,
+        "email_configured": transport is not None and bool(recipients),
         "transport": transport,
         "last_sent_at": state.value if state else None,
     }
@@ -240,7 +240,7 @@ async def run_digest(request: Request, session: Session = Depends(get_session)) 
 
 @router.post("/test")
 async def test_channel(body: TestRequest) -> dict:
-    allowed = {"smtp", "telegram", "signal", "webhook", None}
+    allowed = {"smtp", "jmap", "telegram", "signal", "webhook", None}
     if body.channel not in allowed:
         raise HTTPException(status_code=400, detail="Unknown channel")
     return await send_test(body.channel)

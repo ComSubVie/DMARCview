@@ -49,8 +49,16 @@ def recipients(settings: Settings) -> list[str]:
     return _split(settings.alert_to)
 
 
-def jmap_configured(settings: Settings) -> bool:
+def smtp_transport_configured(settings: Settings) -> bool:
+    return bool(settings.smtp_host and (settings.smtp_from or settings.smtp_username))
+
+
+def jmap_transport_configured(settings: Settings) -> bool:
     return bool(settings.jmap_url and (settings.jmap_token or settings.jmap_username))
+
+
+def jmap_configured(settings: Settings) -> bool:
+    return jmap_transport_configured(settings)
 
 
 def _email_kind(settings: Settings, requested: Optional[str] = None) -> Optional[str]:
@@ -58,12 +66,12 @@ def _email_kind(settings: Settings, requested: Optional[str] = None) -> Optional
         return requested if is_configured(requested, settings) else None
     transport = (settings.email_transport or "auto").lower()
     if transport == "smtp":
-        return "smtp" if is_configured("smtp", settings) else None
+        return "smtp" if smtp_transport_configured(settings) else None
     if transport == "jmap":
-        return "jmap" if is_configured("jmap", settings) else None
-    if is_configured("smtp", settings):
+        return "jmap" if jmap_transport_configured(settings) else None
+    if smtp_transport_configured(settings):
         return "smtp"
-    if is_configured("jmap", settings):
+    if jmap_transport_configured(settings):
         return "jmap"
     return None
 
@@ -74,9 +82,9 @@ def email_transport(settings: Settings) -> Optional[str]:
 
 def is_configured(kind: str, settings: Settings) -> bool:
     if kind == "smtp":
-        return bool(settings.smtp_host and (settings.smtp_from or settings.smtp_username) and recipients(settings))
+        return smtp_transport_configured(settings) and bool(recipients(settings))
     if kind == "jmap":
-        return jmap_configured(settings) and bool(recipients(settings))
+        return jmap_transport_configured(settings) and bool(recipients(settings))
     if kind == "telegram":
         return bool(settings.telegram_bot_token and settings.telegram_chat_id)
     if kind == "signal":
@@ -100,7 +108,7 @@ def statuses(settings: Settings) -> list[dict]:
             "label": "Email (JMAP)",
             "configured": is_configured("jmap", settings),
             "target": _mask(settings.jmap_from or "account identity"),
-            "hint": "JMAP_URL, JMAP_TOKEN and JMAP_FROM",
+            "hint": "JMAP_URL, JMAP_TOKEN, JMAP_FROM, ALERT_TO",
         },
         {
             "kind": "telegram",
@@ -185,7 +193,7 @@ async def send_jmap(
     recipients_to = to or recipients(settings)
     if not recipients_to:
         return ChannelResult("jmap", False, "no recipients configured")
-    if not jmap_configured(settings):
+    if not jmap_transport_configured(settings):
         return ChannelResult("jmap", False, "JMAP is not configured")
     client = JMAPClient(
         settings.jmap_url,
@@ -214,6 +222,8 @@ async def send_email(
     html: Optional[str] = None,
     to: Optional[list[str]] = None,
 ) -> ChannelResult:
+    if not (to or recipients(settings)):
+        return ChannelResult("email", False, "no recipients configured")
     kind = _email_kind(settings)
     if kind == "smtp":
         result = await asyncio.to_thread(send_smtp, settings, subject, body, html=html, to=to)
@@ -288,7 +298,7 @@ async def deliver(
 ) -> list[ChannelResult]:
     tasks = []
     if only is None:
-        if _email_kind(settings) is not None:
+        if _email_kind(settings) is not None and recipients(settings):
             tasks.append(send_email(settings, subject, body))
     elif only in {"smtp", "jmap"}:
         if only == "smtp" and is_configured("smtp", settings):

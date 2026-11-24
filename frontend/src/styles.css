@@ -4084,3 +4084,30 @@ table.data td.right {
   padding: 0 9px;
   font-size: 12px;
 }
+
+
+/* Reports table inset */
+.report-table-wrap {
+  padding: 0 18px;
+  overflow-x: auto;
+}
+
+/* Application footer */
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 34px;
+  padding: 15px 2px 0;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+
+@media (max-width: 620px) {
+  .report-table-wrap {
+    padding: 0 12px;
+  }
+}

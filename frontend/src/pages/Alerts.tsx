@@ -340,6 +340,10 @@ export function AlertsPage() {
           <Badge tone={configured > 0 ? "good" : "warn"}>{configured}/{data.channels.length} ready</Badge>
         </div>
         <div className="card-body" style={{ paddingTop: 12 }}>
+          <p className="tiny muted" style={{ lineHeight: 1.6, marginBottom: 10 }}>
+            SMTP and JMAP are alternative email transports. A grey SMTP card does not disable
+            JMAP; set <code>EMAIL_TRANSPORT</code> to <code>auto</code> or <code>jmap</code>.
+          </p>
           <div className="channel-grid">
             {data.channels.map((channel) => (
               <div className={`channel-card ${channel.configured ? "on" : ""}`} key={channel.kind}>
