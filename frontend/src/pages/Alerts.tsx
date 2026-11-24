@@ -50,6 +50,68 @@ function conditionSummary(rule: AlertRuleItem, kind: AlertKindSpec | undefined):
     .join(" · ");
 }
 
+function DigestCard() {
+  const { toast } = useData();
+  const [status, setStatus] = useState<import("../types").DigestStatus | null>(null);
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    api
+      .digestStatus()
+      .then(setStatus)
+      .catch(() => {
+        /* digest status is optional */
+      });
+  }, []);
+
+  async function run() {
+    setRunning(true);
+    try {
+      const result = await api.runDigest();
+      if (result.ok) toast(`Digest sent for ${result.domains} domain${result.domains === 1 ? "" : "s"}`);
+      else toast(result.error || "Digest could not be sent", "error");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Digest could not be sent", "error");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  if (!status) return null;
+  return (
+    <section className="card" style={{ marginTop: 16 }}>
+      <div className="card-head">
+        <div>
+          <h2 className="card-title">Weekly digest</h2>
+          <p className="card-sub">A fleet summary over SMTP, independent of incident alerts</p>
+        </div>
+        <Badge tone={status.enabled ? "good" : "neutral"}>{status.enabled ? "enabled" : "disabled"}</Badge>
+      </div>
+      <div className="card-body" style={{ paddingTop: 10 }}>
+        <div className="digest-row">
+          <span className="tiny muted">
+            {status.enabled
+              ? `Every ${status.days} days · ${status.recipients.length} recipient${status.recipients.length === 1 ? "" : "s"}`
+              : "Set DIGEST_ENABLED=true and DIGEST_TO (or ALERT_TO) to enable"}
+          </span>
+          <span className="tiny muted">
+            Last sent: {status.last_sent_at ? relativeTime(status.last_sent_at) : "never"}
+          </span>
+          <button
+            className="btn ghost sm"
+            type="button"
+            onClick={() => void run()}
+            disabled={running || !status.smtp_configured || status.recipients.length === 0}
+          >
+            {running ? <span className="spinner" /> : <Mail size={13} />}
+            Send now
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Incident({ event }: { event: AlertEventItem }) {
   return (
     <div className={`alert-item ${event.severity}`}>
@@ -199,6 +261,16 @@ export function AlertsPage() {
     }
   }
 
+  async function retryDelivery(eventId: number) {
+    try {
+      const result = await api.retryAlertDelivery(eventId);
+      toast(result.delivered ? "Alert delivered" : "Retry attempted; check delivery error");
+      void load();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Retry failed", "error");
+    }
+  }
+
   async function testChannel(kind: string) {
     setTesting(kind);
     try {
@@ -302,6 +374,8 @@ export function AlertsPage() {
           ) : null}
         </div>
       </section>
+
+      <DigestCard />
 
       <div className="grid cols-8-4">
         <section className="card">
@@ -413,6 +487,7 @@ export function AlertsPage() {
                   <th className="hide-sm">Delivery</th>
                   <th>State</th>
                   <th className="hide-sm">Title</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -431,7 +506,8 @@ export function AlertsPage() {
                         <span style={{ color: "var(--ink-4)" }}>not configured</span>
                       ) : event.delivery_error ? (
                         <span title={event.delivery_error} style={{ color: "var(--red)" }}>
-                          failed
+                          failed · {event.delivery_attempts} attempt{event.delivery_attempts === 1 ? "" : "s"}
+                          {event.next_retry_at ? ` · retry ${relativeTime(event.next_retry_at)}` : ""}
                         </span>
                       ) : (
                         "—"
@@ -441,6 +517,13 @@ export function AlertsPage() {
                       <Badge tone={event.open ? "bad" : "good"}>{event.open ? "open" : "resolved"}</Badge>
                     </td>
                     <td className="tiny hide-sm">{event.title}</td>
+                    <td>
+                      {event.delivery_error && event.open && !event.delivery_error.startsWith("no notification") ? (
+                        <button className="btn ghost sm" type="button" onClick={() => void retryDelivery(event.id)}>
+                          Retry
+                        </button>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>

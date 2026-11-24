@@ -67,6 +67,8 @@ export const api = {
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
 
   meta: () => request<Meta>("/meta"),
+  audit: (params: { limit?: number; action?: string; domain?: string } = {}) =>
+    request<{ items: import("./types").AuditItem[]; total: number }>(`/audit${query(params)}`),
   dashboard: (domain: string, days: number) =>
     request<Dashboard>(`/dashboard${query({ domain, days })}`),
   simulatePolicy: (
@@ -124,6 +126,8 @@ export const api = {
     }),
   deleteFleetView: (id: number) =>
     request<{ ok: boolean }>(`/fleet/views/${id}`, { method: "DELETE" }),
+  dnsDiff: (domain: string) =>
+    request<import("./types").DnsDiff>(`/domain-health/diff${query({ domain })}`),
   fleetHealth: () =>
     request<{ items: import("./types").FleetHealthItem[] }>("/domain-health/fleet"),
   domainSettings: (domain: string) =>
@@ -214,6 +218,17 @@ export const api = {
     request<{ domain: string; rules: import("./types").AlertOverrideRule[] }>(
       `/alerts/overrides/${encodeURIComponent(domain)}/${encodeURIComponent(kind)}`,
       { method: "DELETE" },
+    ),
+  retryAlertDelivery: (eventId: number) =>
+    request<{ event: import("./types").AlertEventItem; delivered: boolean; results: unknown[] }>(
+      `/alerts/events/${eventId}/retry`,
+      { method: "POST" },
+    ),
+  digestStatus: () => request<import("./types").DigestStatus>("/alerts/digest"),
+  runDigest: () =>
+    request<{ ok: boolean; error: string | null; domains: number; period: string }>(
+      "/alerts/digest/run",
+      { method: "POST" },
     ),
   runAlerts: () =>
     request<import("./types").AlertRunResult>("/alerts/run", { method: "POST" }),

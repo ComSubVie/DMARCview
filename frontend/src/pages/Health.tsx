@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { CheckIcon, expiryTone, overallMeta, statusClass, statusMeta } from "../components/health-ui";
+import { DnsDiffCard } from "../components/DnsDiffCard";
 import { ExpectedSourcesCard } from "../components/ExpectedSourcesCard";
 import { Badge, EmptyState, Skeleton } from "../components/ui";
 import { dateTime, relativeTime } from "../lib/format";
@@ -671,6 +672,8 @@ export function HealthPage() {
       </div>
 
       {dmarc ? <DmarcbisCard result={dmarc} domain={health.domain} /> : null}
+
+      <DnsDiffCard domain={health.domain} />
 
       {optional.length > 0 ? (
         <>

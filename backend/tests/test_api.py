@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.models import Domain, DomainHealthSnapshot, Report, SourceRecord
+from app.models import Domain, DomainHealthSnapshot, Report, SourceRecord, utcnow
 
 from .conftest import sample
 
@@ -457,6 +457,8 @@ def test_reporter_scorecard_fields(auth_client: TestClient):
     for reporter in reporters:
         assert "quality" in reporter
         assert "coverage_pct" in reporter
+        assert "quality_score" in reporter
+        assert "warnings" in reporter
         assert reporter["quality"] in {"good", "sparse", "late", "silent"}
 
 
@@ -500,3 +502,56 @@ def test_saved_fleet_views_crud(auth_client: TestClient):
     assert removed.status_code == 200
     after = auth_client.get("/api/fleet/views").json()
     assert all(entry["id"] != item["id"] for entry in after["items"])
+
+
+def test_dns_diff_endpoint(auth_client: TestClient, session: Session):
+    upload_all(auth_client)
+    domain = session.exec(select(Domain).where(Domain.name == "tgm.rocks")).one()
+    def result(record: str):
+        return {
+            "key": "dmarc",
+            "label": "DMARC",
+            "status": "pass",
+            "summary": f"p={record}",
+            "details": [],
+            "remediation": None,
+            "core": True,
+            "evidence": {"record": f"v=DMARC1; p={record}"},
+            "duration_ms": 1,
+        }
+    for checked, record in ((utcnow(), "none"), (utcnow(), "reject")):
+        session.add(
+            DomainHealthSnapshot(
+                domain_id=domain.id,
+                checked_at=checked,
+                overall="pass",
+                score=1.0,
+                core_passed=4,
+                core_total=4,
+                results=[result(record)],
+            )
+        )
+        session.commit()
+    data = auth_client.get("/api/domain-health/diff", params={"domain": "tgm.rocks"}).json()
+    assert data["domain"] == "tgm.rocks"
+    assert data["changes"]
+    assert data["changes"][0]["before"]["summary"] == "p=none"
+    assert data["changes"][0]["after"]["summary"] == "p=reject"
+
+
+def test_audit_log_records_admin_actions(auth_client: TestClient):
+    upload_all(auth_client)
+    auth_client.put(
+        "/api/domains/tgm.rocks/profile",
+        json={"display_name": "TGM", "notes": "n", "tags": ["prod"]},
+    )
+    data = auth_client.get("/api/audit", params={"action": "domain.profile"}).json()
+    assert data["items"]
+    assert data["items"][0]["domain"] == "tgm.rocks"
+
+
+def test_delivery_and_digest_status(auth_client: TestClient):
+    digest = auth_client.get("/api/alerts/digest").json()
+    assert digest["enabled"] is False
+    assert digest["days"] >= 1
+    assert "recipients" in digest

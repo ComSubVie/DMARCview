@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
-from .. import analytics
+from .. import analytics, audit
 from ..db import get_session
 from ..deps import current_user
 from ..models import Domain, DomainAnnotation, utcnow
@@ -59,6 +59,7 @@ def domain_timeline(
 def create_annotation(
     domain_name: str,
     payload: AnnotationPayload,
+    request: Request,
     session: Session = Depends(get_session),
 ) -> dict:
     domain = _domain_or_404(session, domain_name)
@@ -76,6 +77,7 @@ def create_annotation(
         body=(payload.body or "").strip() or None,
     )
     session.add(row)
+    audit.record(session, "annotation.create", actor=audit.actor(request), domain=domain.name, target=str(row.title))
     session.commit()
     session.refresh(row)
     return {"id": row.id, "occurred_at": iso(row.occurred_at), "kind": row.kind, "title": row.title, "body": row.body}
@@ -85,6 +87,7 @@ def create_annotation(
 def update_annotation(
     annotation_id: int,
     payload: AnnotationUpdate,
+    request: Request,
     session: Session = Depends(get_session),
 ) -> dict:
     row = session.get(DomainAnnotation, annotation_id)
@@ -108,16 +111,34 @@ def update_annotation(
         row.body = payload.body.strip() or None
     row.updated_at = utcnow()
     session.add(row)
+    domain = session.get(Domain, row.domain_id)
+    audit.record(
+        session,
+        "annotation.update",
+        actor=audit.actor(request),
+        domain=domain.name if domain else None,
+        target=str(row.id),
+    )
     session.commit()
     session.refresh(row)
     return {"id": row.id, "occurred_at": iso(row.occurred_at), "kind": row.kind, "title": row.title, "body": row.body}
 
 
 @router.delete("/annotations/{annotation_id}")
-def delete_annotation(annotation_id: int, session: Session = Depends(get_session)) -> dict:
+def delete_annotation(
+    annotation_id: int, request: Request, session: Session = Depends(get_session)
+) -> dict:
     row = session.get(DomainAnnotation, annotation_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Unknown annotation")
+    domain = session.get(Domain, row.domain_id)
     session.delete(row)
+    audit.record(
+        session,
+        "annotation.delete",
+        actor=audit.actor(request),
+        domain=domain.name if domain else None,
+        target=str(annotation_id),
+    )
     session.commit()
     return {"ok": True}

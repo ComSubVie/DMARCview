@@ -37,6 +37,9 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
   snapshot changes are shown with before/after summaries.
 - **Saved fleet views.** Name and recall fleet filters and sort order: group, policy, health,
   failing sources, alignment/TLS thresholds.
+- **Operator diagnostics.** Per-domain alert thresholds, a DNS/SPF/MTA-STS/TLS-RPT diff history,
+  reporter quality scores, delivery attempts with manual retry, digest controls and an append-only
+  audit log.
 - **TLS delivery.** Session success rate per MX host, every policy domain in multi-policy
   TLS-RPT reports, failure reasons
   (`certificate-expired`, `starttls-not-supported`, …) and the reporters behind them.
@@ -458,9 +461,11 @@ export/fleet; v1.7 added retention; v1.8 delivered RFC 9989 tree-walk/PSD policy
 a DMARCbis readiness panel, external report authorization and effective-policy coverage; v1.9
 adds the read-only policy simulator and the private domain timeline; v1.10 adds restore,
 weekly digest, reporter quality, known senders, per-domain alert overrides and domain groups;
-v1.11 adds saved fleet views and signal quality: TLS policy attribution, RFC 9990 warnings and
-DNS change history. No mandatory roadmap work remains; MFA/audit is parked, and RUF/platform
-work is optional. Sequencing and effort estimates live in [docs/ROADMAP.md](docs/ROADMAP.md).
+v1.11 added saved fleet views and signal quality: TLS policy attribution, RFC 9990 warnings and
+DNS change history. v1.12 completes operator visibility: editable alert overrides, DNS diff
+history, report-quality scores, delivery diagnostics/digest controls and an audit log. No
+mandatory roadmap work remains; off-box backup is the recommended next operational step, while
+MFA and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
 
@@ -468,7 +473,7 @@ work is optional. Sequencing and effort estimates live in [docs/ROADMAP.md](docs
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (112 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (115 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build

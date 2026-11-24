@@ -337,6 +337,8 @@ export interface ReporterCoverage {
   days_present: number;
   coverage_pct: number;
   avg_latency_hours: number | null;
+  warnings: number;
+  quality_score: number;
   quality: "good" | "sparse" | "late" | "silent";
   status: "active" | "silent";
 }
@@ -531,6 +533,16 @@ export interface TlsReportDetail extends TlsReportRow {
   raw_sha256: string;
 }
 
+export interface AuditItem {
+  id: number;
+  at: string | null;
+  actor: string;
+  action: string;
+  domain: string | null;
+  target: string | null;
+  detail: Record<string, unknown>;
+}
+
 export interface Meta {
   version: string;
   app: string;
@@ -646,6 +658,30 @@ export interface DomainHealth {
   checked: boolean;
 }
 
+export interface DnsDiffEntry {
+  key: string;
+  label: string;
+  status: string;
+  summary: string;
+  record: string | null;
+  evidence: Record<string, unknown>;
+}
+
+export interface DnsDiffChange {
+  id: string;
+  key: string;
+  label: string;
+  checked_at: string | null;
+  before: DnsDiffEntry;
+  after: DnsDiffEntry;
+}
+
+export interface DnsDiff {
+  domain: string;
+  current: DnsDiffEntry[];
+  changes: DnsDiffChange[];
+}
+
 export interface DomainSettings {
   domain: string;
   dkim_selectors: string[];
@@ -744,6 +780,16 @@ export interface AlertKindSpec {
   fields: AlertFieldSpec[];
 }
 
+export interface AlertFieldSpec {
+  key: string;
+  label: string;
+  type: "int" | "float";
+  default: number;
+  min: number;
+  max: number;
+  unit: string;
+}
+
 export interface AlertOverrideRule {
   rule_id: number;
   kind: string;
@@ -752,6 +798,7 @@ export interface AlertOverrideRule {
   enabled: boolean;
   condition: Record<string, number>;
   cooldown_minutes: number;
+  fields: AlertFieldSpec[];
   override: {
     enabled: boolean;
     condition: Record<string, number>;
@@ -792,7 +839,17 @@ export interface AlertEventItem {
   resolved_at: string | null;
   delivered_at: string | null;
   delivery_error: string | null;
+  delivery_attempts: number;
+  next_retry_at: string | null;
   open: boolean;
+}
+
+export interface DigestStatus {
+  enabled: boolean;
+  days: number;
+  recipients: string[];
+  smtp_configured: boolean;
+  last_sent_at: string | null;
 }
 
 export interface AlertsPayload {

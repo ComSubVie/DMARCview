@@ -6,11 +6,11 @@ import hashlib
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from .. import analytics, share
+from .. import analytics, audit, share
 from ..db import get_session
 from ..deps import current_user
 from ..models import Domain, ShareLink, utcnow
@@ -34,6 +34,7 @@ def _domain_name_map(session: Session) -> dict[int, str]:
 @router.post("")
 def create_link(
     payload: CreateShareLink,
+    request: Request,
     session: Session = Depends(get_session),
 ) -> dict:
     domain_row = None
@@ -47,6 +48,15 @@ def create_link(
         days=payload.days,
         include_sources=payload.include_sources,
     )
+    audit.record(
+        session,
+        "share.create",
+        actor=audit.actor(request),
+        domain=domain_row.name if domain_row else None,
+        target=str(row.id),
+        detail={"days": payload.days, "include_sources": payload.include_sources},
+    )
+    session.commit()
     return {
         **share.serialise_link(row, domain_row.name if domain_row else None),
         "token": token,
@@ -62,7 +72,9 @@ def list_links(session: Session = Depends(get_session)) -> dict:
 
 
 @router.post("/{link_id}/revoke")
-def revoke_link(link_id: int, session: Session = Depends(get_session)) -> dict:
+def revoke_link(
+    link_id: int, request: Request, session: Session = Depends(get_session)
+) -> dict:
     row = session.get(ShareLink, link_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Share link not found")
@@ -72,6 +84,14 @@ def revoke_link(link_id: int, session: Session = Depends(get_session)) -> dict:
         session.commit()
         session.refresh(row)
     names = _domain_name_map(session)
+    audit.record(
+        session,
+        "share.revoke",
+        actor=audit.actor(request),
+        domain=names.get(row.domain_id),
+        target=str(row.id),
+    )
+    session.commit()
     return share.serialise_link(row, names.get(row.domain_id))
 
 

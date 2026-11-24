@@ -13,6 +13,7 @@ const NAV = [
   { to: "/reports", label: "Reports", end: false },
   { to: "/tls", label: "TLS", end: false },
   { to: "/ingest", label: "Ingestion", end: false },
+  { to: "/audit", label: "Audit", end: false },
 ];
 
 export function Layout({

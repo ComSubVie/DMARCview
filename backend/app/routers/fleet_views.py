@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
+from .. import audit
 from ..db import get_session
 from ..deps import current_user
 from ..models import SavedFleetView, utcnow
@@ -43,7 +44,7 @@ def list_views(session: Session = Depends(get_session)) -> dict:
 
 
 @router.post("", status_code=201)
-def create_view(payload: ViewPayload, session: Session = Depends(get_session)) -> dict:
+def create_view(payload: ViewPayload, request: Request, session: Session = Depends(get_session)) -> dict:
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="name must not be empty")
@@ -55,12 +56,14 @@ def create_view(payload: ViewPayload, session: Session = Depends(get_session)) -
         session.rollback()
         raise HTTPException(status_code=409, detail="a saved view with this name exists") from exc
     session.refresh(row)
+    audit.record(session, "fleet_view.create", actor=audit.actor(request), target=row.name)
+    session.commit()
     return _serialise(row)
 
 
 @router.put("/{view_id}")
 def update_view(
-    view_id: int, payload: ViewUpdate, session: Session = Depends(get_session)
+    view_id: int, payload: ViewUpdate, request: Request, session: Session = Depends(get_session)
 ) -> dict:
     row = session.get(SavedFleetView, view_id)
     if row is None:
@@ -77,14 +80,20 @@ def update_view(
         session.rollback()
         raise HTTPException(status_code=409, detail="a saved view with this name exists") from exc
     session.refresh(row)
+    audit.record(session, "fleet_view.update", actor=audit.actor(request), target=row.name)
+    session.commit()
     return _serialise(row)
 
 
 @router.delete("/{view_id}")
-def delete_view(view_id: int, session: Session = Depends(get_session)) -> dict:
+def delete_view(
+    view_id: int, request: Request, session: Session = Depends(get_session)
+) -> dict:
     row = session.get(SavedFleetView, view_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Unknown saved view")
+    name = row.name
     session.delete(row)
+    audit.record(session, "fleet_view.delete", actor=audit.actor(request), target=name)
     session.commit()
     return {"ok": True}

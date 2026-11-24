@@ -57,12 +57,12 @@ docker build -t dmarcview .
 | `backend/app/analytics.py` | Read-side aggregation for the dashboard, reports and TLS pages |
 | `backend/app/simulation.py` | Read-only policy projection over stored reports |
 | `backend/app/timeline.py` | Private annotations plus derived domain timeline events |
-| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `simulation`, `timeline`, `expectations`, `fleet_views`, `ingest`, `health`, `alerts`, `share`, `export` |
+| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `simulation`, `timeline`, `expectations`, `fleet_views`, `audit`, `ingest`, `health`, `alerts`, `share`, `export` |
 | `backend/app/jobs.py` | In-process scheduler (health checks, probes, PTR enrichment, alert evaluation) |
 | `backend/app/share.py` | Share-token signing, public payload shaping, storage helpers |
 | `backend/app/retention.py` | Raw archiving and opt-in report pruning |
 | `backend/app/models.py` | SQLModel schema — the source of truth for Alembic |
-| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute, `0006` DMARCbis fields, `0007` annotations, `0008` source expectations, `0009` alert overrides/retry, `0010` domain tags, `0011` saved fleet views, `0012` report errors) |
+| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute, `0006` DMARCbis fields, `0007` annotations, `0008` source expectations, `0009` alert overrides/retry, `0010` domain tags, `0011` saved fleet views, `0012` report errors, `0013` audit log) |
 | `frontend/src/` | `pages/`, `components/`, `state.tsx`, `api.ts`, `types.ts`, `styles.css` |
 | `samples/` | Hand-written CRLF `.eml` fixtures used by the test suite |
 | `scripts/` | GeoIP/demo helpers and the DeepSeek release-note generator |
@@ -118,6 +118,10 @@ snapshot and replaces the live SQLite file; stop the web process first. Archives
 
 **Known-sender expectations suppress noise, not evidence.** `source_expectations` only skips
 new-source *findings*; it never hides reports, sources or history.
+
+**Audit events are append-only and must not contain secrets.** `app/audit.py` records admin
+actions; never include passwords, tokens, raw report contents or alert-channel credentials in
+`detail`.
 
 **Per-domain alert overrides are layered over global rules.** Preserve dedupe/resolution
 semantics; disabling an override must resolve open events, not leave them stale.
@@ -213,8 +217,8 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
 the user asks for them. Export, fleet comparison, retention, DMARCbis and decision support are
-delivered, including the v1.11 saved fleet views and signal-quality work. No mandatory roadmap
-work remains; MFA/audit stays parked, and RUF/platform work remains optional/trigger-based.
+delivered, including v1.12 operator visibility. No mandatory roadmap work remains. MFA stays
+parked; off-box backup, RUF and platform work remain optional/trigger-based.
 
 ## Security expectations
 

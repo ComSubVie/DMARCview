@@ -216,6 +216,24 @@ async def evaluate(
     return summary
 
 
+async def retry_event(session: Session, event_id: int) -> dict[str, Any]:
+    settings = get_settings()
+    event = session.get(AlertEvent, event_id)
+    if event is None:
+        raise ValueError("Alert event not found")
+    domain = session.get(Domain, event.domain_id)
+    if domain is None:
+        raise ValueError("Domain not found")
+    results = await _notify(event, domain, settings, resolved=False)
+    session.add(event)
+    session.commit()
+    return {
+        "event": serialize_event(event, domain.name, ""),
+        "delivered": bool(results) and all(item.ok for item in results),
+        "results": [item.as_dict() for item in results],
+    }
+
+
 async def send_test(channel: Optional[str] = None) -> dict[str, Any]:
     settings = get_settings()
     results = await channels.deliver(
@@ -243,6 +261,8 @@ def serialize_event(event: AlertEvent, domain_name: str, kind: str) -> dict[str,
         "resolved_at": _iso(event.resolved_at),
         "delivered_at": _iso(event.delivered_at),
         "delivery_error": event.delivery_error,
+        "delivery_attempts": int(event.delivery_attempts or 0),
+        "next_retry_at": _iso(event.next_retry_at),
         "open": event.resolved_at is None,
     }
 

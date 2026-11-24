@@ -5,12 +5,12 @@ from __future__ import annotations
 import ipaddress
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from .. import analytics
+from .. import analytics, audit
 from ..db import get_session
 from ..deps import current_user
 from ..models import Domain, SourceExpectation
@@ -76,6 +76,7 @@ def list_expectations(domain_name: str, session: Session = Depends(get_session))
 def create_expectation(
     domain_name: str,
     payload: ExpectationPayload,
+    request: Request,
     session: Session = Depends(get_session),
 ) -> dict:
     domain = _domain_or_404(session, domain_name)
@@ -93,14 +94,26 @@ def create_expectation(
         session.rollback()
         raise HTTPException(status_code=409, detail="this expectation already exists") from exc
     session.refresh(row)
+    audit.record(session, "expectation.create", actor=audit.actor(request), domain=domain.name, target=value)
+    session.commit()
     return _serialise(row)
 
 
 @router.delete("/expectations/{expectation_id}")
-def delete_expectation(expectation_id: int, session: Session = Depends(get_session)) -> dict:
+def delete_expectation(
+    expectation_id: int, request: Request, session: Session = Depends(get_session)
+) -> dict:
     row = session.get(SourceExpectation, expectation_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Unknown expectation")
+    domain = session.get(Domain, row.domain_id)
     session.delete(row)
+    audit.record(
+        session,
+        "expectation.delete",
+        actor=audit.actor(request),
+        domain=domain.name if domain else None,
+        target=row.value,
+    )
     session.commit()
     return {"ok": True}

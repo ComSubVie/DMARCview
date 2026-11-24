@@ -36,6 +36,10 @@ export function CoverageCard({
                   <span className="tiny muted">
                     {reporter.reports} reports · {reporter.coverage_pct}% days
                   </span>
+                  <span className="tiny muted">{reporter.quality_score}/100</span>
+                  {reporter.warnings > 0 ? (
+                    <span className="tiny muted">{reporter.warnings} warning{reporter.warnings === 1 ? "" : "s"}</span>
+                  ) : null}
                   <span className={`tiny ${reporter.status === "silent" ? "coverage-silent" : "muted"}`}>
                     {reporter.status === "silent"
                       ? "silent"

@@ -42,6 +42,24 @@ class Domain(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class AuditEvent(SQLModel, table=True):
+    """Append-only record of an admin action."""
+
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        Index("ix_audit_events_at", "at"),
+        Index("ix_audit_events_action", "action"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    at: datetime = Field(default_factory=utcnow, index=True)
+    actor: str = Field(default="admin", max_length=64)
+    action: str = Field(max_length=64)
+    domain: Optional[str] = Field(default=None, max_length=255)
+    target: Optional[str] = Field(default=None, max_length=255)
+    detail: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+
+
 class DomainTag(SQLModel, table=True):
     """A free-form group/tag attached to a domain."""
 

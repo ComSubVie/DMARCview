@@ -19,6 +19,7 @@ from .alerts.service import ensure_rules
 from .config import get_settings
 from .db import get_engine, init_db
 from .routers import api as api_router
+from .routers import audit as audit_router
 from .routers import auth as auth_router
 from .routers import simulation as simulation_router
 from .routers import timeline as timeline_router
@@ -117,6 +118,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router.router)
     app.include_router(api_router.router)
+    app.include_router(audit_router.router)
     app.include_router(simulation_router.router)
     app.include_router(timeline_router.router)
     app.include_router(expectations_router.router)

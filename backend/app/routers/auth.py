@@ -5,10 +5,13 @@ from __future__ import annotations
 import hmac
 import time
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlmodel import Session
 
+from .. import audit
 from ..config import get_settings
+from ..db import get_session
 from ..deps import client_ip, current_user
 from ..security import login_throttle, verify_password
 
@@ -43,7 +46,12 @@ def me(request: Request) -> SessionInfo:
 
 
 @router.post("/login", response_model=SessionInfo)
-def login(payload: LoginPayload, request: Request, response: Response) -> SessionInfo:
+def login(
+    payload: LoginPayload,
+    request: Request,
+    response: Response,
+    session: Session = Depends(get_session),
+) -> SessionInfo:
     settings = get_settings()
     if not settings.has_credentials:
         raise HTTPException(
@@ -73,12 +81,27 @@ def login(payload: LoginPayload, request: Request, response: Response) -> Sessio
     request.session.clear()
     request.session["user"] = settings.admin_username
     request.session["auth_at"] = int(time.time())
+    audit.record(
+        session,
+        "auth.login",
+        actor=settings.admin_username,
+        detail={"ip": client_ip(request)},
+    )
+    session.commit()
     response.headers["Cache-Control"] = "no-store"
     return SessionInfo(authenticated=True, username=settings.admin_username)
 
 
 @router.post("/logout")
-def logout(request: Request, response: Response) -> dict[str, bool]:
+def logout(
+    request: Request,
+    response: Response,
+    session: Session = Depends(get_session),
+) -> dict[str, bool]:
+    user = str(request.session.get("user") or "admin")
+    if request.session.get("user"):
+        audit.record(session, "auth.logout", actor=user, detail={"ip": client_ip(request)})
+        session.commit()
     request.session.clear()
     response.headers["Cache-Control"] = "no-store"
     return {"ok": True}

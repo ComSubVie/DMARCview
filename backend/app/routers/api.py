@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
-from .. import analytics
+from .. import analytics, audit
 from ..config import get_settings
 from ..db import get_session
 from ..deps import current_user
@@ -80,6 +80,7 @@ def domain_profile(domain_name: str, session: Session = Depends(get_session)) ->
 def update_domain_profile(
     domain_name: str,
     payload: DomainProfilePayload,
+    request: Request,
     session: Session = Depends(get_session),
 ) -> dict:
     row = _domain_or_404(session, domain_name)
@@ -97,6 +98,7 @@ def update_domain_profile(
             if value and value not in seen:
                 seen.add(value)
                 session.add(DomainTag(domain_id=row.id, tag=value[:64]))
+    audit.record(session, "domain.profile", actor=audit.actor(request), domain=row.name, target=row.name)
     session.commit()
     session.refresh(row)
     return {

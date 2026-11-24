@@ -660,6 +660,12 @@ def _coverage_detail(session: Session, domain: Optional[Domain], rng: DateRange)
 
     now = utcnow()
     latency: dict[str, list[float]] = {}
+    warnings_by_org: dict[str, int] = {}
+    for org, report_errors in session.exec(
+        select(Report.org_name, Report.report_errors).where(*conditions)
+    ).all():
+        if report_errors:
+            warnings_by_org[org] = warnings_by_org.get(org, 0) + len(report_errors)
     for org, date_end, ingested_at in session.exec(
         select(Report.org_name, Report.date_end, Report.ingested_at).where(*conditions)
     ).all():
@@ -683,14 +689,22 @@ def _coverage_detail(session: Session, domain: Optional[Domain], rng: DateRange)
         values = latency.get(org, [])
         average = round(sum(values) / len(values), 1) if values else None
         coverage = round(days_present / max(1, rng.days) * 100, 1)
+        warnings = warnings_by_org.get(org, 0)
         if status == "silent":
             quality = "silent"
-        elif coverage < 33:
-            quality = "sparse"
-        elif average is not None and average > 48:
-            quality = "late"
+            score = 0.0
         else:
-            quality = "good"
+            score = 100.0 - (100.0 - coverage) * 0.4
+            if average is not None:
+                score -= min(25.0, average / 2)
+            score -= min(20.0, warnings * 3)
+            score = round(max(0.0, min(100.0, score)), 1)
+            if coverage < 33:
+                quality = "sparse"
+            elif average is not None and average > 48:
+                quality = "late"
+            else:
+                quality = "good"
         return {
             "org": org,
             "reports": int(reports),
@@ -700,6 +714,8 @@ def _coverage_detail(session: Session, domain: Optional[Domain], rng: DateRange)
             "days_present": int(days_present),
             "coverage_pct": coverage,
             "avg_latency_hours": average,
+            "warnings": warnings,
+            "quality_score": score,
             "quality": quality,
             "status": status,
         }

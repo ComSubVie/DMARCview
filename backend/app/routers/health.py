@@ -6,14 +6,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlmodel import Session, select
 
+from .. import audit
 from ..config import get_settings
 from ..db import get_session
 from ..deps import current_user
+from ..dnsdiff import build_dns_diff
 from ..health.service import (
     fleet_health,
     health_payload,
@@ -58,6 +60,16 @@ async def run_domain_health(
 @router.get("/domain-health/fleet")
 def domain_health_fleet(session: Session = Depends(get_session)) -> dict:
     return {"items": fleet_health(session)}
+
+
+@router.get("/domain-health/diff")
+def domain_health_diff(
+    domain: str = Query(...),
+    limit: int = Query(default=30, ge=2, le=100),
+    session: Session = Depends(get_session),
+) -> dict:
+    row = _domain(session, domain)
+    return build_dns_diff(session, row, limit=limit)
 
 
 @router.get("/domain-health/history")
@@ -111,6 +123,7 @@ def read_domain_settings(
 def write_domain_settings(
     domain_name: str,
     payload: DomainSettingsPayload,
+    request: Request,
     session: Session = Depends(get_session),
 ) -> dict:
     row = _domain(session, domain_name)
@@ -127,6 +140,8 @@ def write_domain_settings(
             and payload.checks_muted_until is None
         ),
     )
+    audit.record(session, "domain.settings", actor=audit.actor(request), domain=row.name, target=row.name)
+    session.commit()
     return serialise_settings(session, row)
 
 
