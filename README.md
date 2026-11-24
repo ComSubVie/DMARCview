@@ -120,6 +120,10 @@ Publish a release with:
 git tag v1.1.4 && git push origin v1.1.4
 ```
 
+The tag workflow builds and tests first, then publishes the image and creates the GitHub
+Release automatically with generated notes plus the image reference and digest. Re-running
+the workflow leaves an existing release (and any hand-edited notes) untouched.
+
 ## Without Docker
 
 ```bash

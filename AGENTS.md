@@ -129,6 +129,9 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
   stable tags; `edge` tracks the default branch.
 - The workflow runs the tests and a frontend build before publishing, and attaches SBOM +
   provenance attestations.
+- After a successful tag publish it creates the GitHub Release automatically: generated
+  notes plus the image reference and digest. Re-running the workflow leaves an existing
+  release untouched, so hand-edited notes are safe.
 
 ## Roadmap
 
