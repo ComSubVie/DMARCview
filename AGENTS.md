@@ -26,6 +26,7 @@ Stalwart's behaviour before trusting them.
 ../.venv/bin/python -m app.cli stats    # row counts
 ../.venv/bin/python -m app.cli import ../samples/*.eml
 ../.venv/bin/python -m app.cli backup --keep 14
+../.venv/bin/python -m app.cli geo-enrich
 ../.venv/bin/python -m app.cli migrate
 
 # Frontend (from frontend/)
@@ -51,10 +52,11 @@ docker build -t dmarcview .
 | `backend/app/alerts/` | Rule specs and evaluators, notification channels, evaluation/dedupe service |
 | `backend/app/health/` | DNS/HTTP clients, checks, DKIM selector discovery, TLS probes, engine, persistence |
 | `backend/app/analytics.py` | Read-side aggregation for the dashboard, reports and TLS pages |
-| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `ingest`, `health`, `alerts` |
+| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `ingest`, `health`, `alerts`, `share` |
 | `backend/app/jobs.py` | In-process scheduler (health checks, probes, PTR enrichment, alert evaluation) |
+| `backend/app/share.py` | Share-token signing, public payload shaping, storage helpers |
 | `backend/app/models.py` | SQLModel schema — the source of truth for Alembic |
-| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN) |
+| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute) |
 | `frontend/src/` | `pages/`, `components/`, `state.tsx`, `api.ts`, `types.ts`, `styles.css` |
 | `samples/` | Hand-written CRLF `.eml` fixtures used by the test suite |
 | `docs/` | Roadmap and screenshots |
@@ -95,6 +97,14 @@ never authenticate, never send mail, and only connect to MX hosts plus configure
 The same IP can send for several recipient domains (and one ESP rotates many IPs), so
 grouping on IP alone merges unrelated senders — there is a regression test for this. ASN/PTR
 is display context, not part of the identity key.
+
+**Share tokens are stored only as SHA-256 hashes.** Never log or persist the raw token. The
+public payload may include sources only when the link allows it, and must always strip
+envelope from/to, identities and other header-from domains. Public responses set
+`no-referrer`, `noindex` and `no-store`.
+
+**Scheduled checks honour `domain_settings.dns_checks_enabled` and `checks_muted_until`;
+manual runs deliberately ignore the mute.**
 
 **Alerts dedupe on `(rule, domain, dedupe_key)` while an incident is open.** A new episode is
 suppressed until the rule's cooldown passes; when the condition clears the open event is
@@ -154,13 +164,13 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 ## Roadmap
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
-the user asks for them. The analytics foundation (identities + period changes) is delivered;
-the analytics phase is complete; the next planned slice is read-only share links, then
-export and retention.
+the user asks for them. Share links are delivered; the next planned slice is export and the
+fleet comparison table, then retention.
 
 ## Security expectations
 
 Single-admin session auth with PBKDF2, origin checks, CSP and a login throttle. Never weaken
 these to make a feature easier. Do not log credentials, bearer tokens or report contents.
 Outbound connections are limited to the configured JMAP server, DNS resolvers, certificate
-probes and the explicit GeoIP download.
+probes and the explicit GeoIP download. The public share endpoint is unauthenticated but
+must stay read-only, token-scoped, rate-limited and covered by the stripping rules above.

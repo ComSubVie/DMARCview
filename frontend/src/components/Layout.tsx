@@ -1,8 +1,9 @@
-import { CalendarRange, Globe2, LogOut, RefreshCw, Settings2, ShieldCheck } from "lucide-react";
+import { CalendarRange, Globe2, LogOut, RefreshCw, Settings2, Share2, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useData } from "../state";
+import { ShareDrawer } from "./ShareDrawer";
 import { formatPct, relativeTime } from "../lib/format";
 
 const NAV = [
@@ -38,6 +39,7 @@ export function Layout({
   const navigate = useNavigate();
   const location = useLocation();
   const [signingOut, setSigningOut] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const pct = dashboard?.kpis.aligned_pct;
   const tone = pct === undefined ? "" : pct >= 95 ? "good" : pct >= 80 ? "warn" : "bad";
@@ -92,6 +94,15 @@ export function Layout({
                 {pct === undefined ? "—" : formatPct(pct)}
               </strong>
             </div>
+            <button
+              className="btn ghost icon"
+              onClick={() => setSharing(true)}
+              aria-label="Share dashboard"
+              title="Share dashboard"
+              type="button"
+            >
+              <Share2 size={15} />
+            </button>
             <button className="btn ghost icon" onClick={handleRefresh} aria-label="Refresh data" type="button">
               <RefreshCw size={15} className={loading ? "spin" : undefined} />
             </button>
@@ -152,6 +163,8 @@ export function Layout({
       ) : null}
 
       {children}
+
+      {sharing ? <ShareDrawer onClose={() => setSharing(false)} /> : null}
 
       {toastMessage ? (
         <div className={`toast ${toastMessage.tone === "error" ? "error" : ""}`} role="status">

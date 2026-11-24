@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from .. import analytics
@@ -47,6 +48,34 @@ def meta(session: Session = Depends(get_session)) -> dict:
 @router.get("/domains")
 def domains(session: Session = Depends(get_session)) -> dict:
     return {"items": analytics.list_domains(session)}
+
+
+class DomainProfilePayload(BaseModel):
+    display_name: Optional[str] = Field(default=None, max_length=255)
+    notes: Optional[str] = Field(default=None, max_length=4000)
+
+
+@router.get("/domains/{domain_name}/profile")
+def domain_profile(domain_name: str, session: Session = Depends(get_session)) -> dict:
+    row = _domain_or_404(session, domain_name)
+    return {"name": row.name, "display_name": row.display_name, "notes": row.notes}
+
+
+@router.put("/domains/{domain_name}/profile")
+def update_domain_profile(
+    domain_name: str,
+    payload: DomainProfilePayload,
+    session: Session = Depends(get_session),
+) -> dict:
+    row = _domain_or_404(session, domain_name)
+    display_name = (payload.display_name or "").strip()
+    notes = (payload.notes or "").strip()
+    row.display_name = display_name or None
+    row.notes = notes or None
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return {"name": row.name, "display_name": row.display_name, "notes": row.notes}
 
 
 @router.get("/dashboard")

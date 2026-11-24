@@ -23,6 +23,7 @@ from .routers import auth as auth_router
 from .routers import alerts as alerts_router
 from .routers import health as health_router
 from .routers import ingest as ingest_router
+from .routers import share as share_router
 from .version import VERSION
 
 logging.basicConfig(
@@ -114,6 +115,8 @@ def create_app() -> FastAPI:
     app.include_router(ingest_router.router)
     app.include_router(health_router.router)
     app.include_router(alerts_router.router)
+    app.include_router(share_router.router)
+    app.include_router(share_router.public_router)
 
     dist = settings.dist_dir
 
@@ -132,7 +135,14 @@ def create_app() -> FastAPI:
             if full_path.startswith("assets/"):
                 return JSONResponse({"detail": "Not found"}, status_code=404)
         if index.is_file():
-            return FileResponse(index, headers={"Cache-Control": "no-cache"})
+            headers = {"Cache-Control": "no-cache"}
+            if full_path.startswith("s/"):
+                headers = {
+                    "Cache-Control": "no-store",
+                    "Referrer-Policy": "no-referrer",
+                    "X-Robots-Tag": "noindex, nofollow",
+                }
+            return FileResponse(index, headers=headers)
         return HTMLResponse(
             """<!doctype html><html><head><title>DMARCView</title></head>
             <body style="font-family:system-ui;padding:3rem;max-width:42rem;margin:auto">

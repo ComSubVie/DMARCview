@@ -96,6 +96,7 @@ class DomainSettingsPayload(BaseModel):
     probe_targets: Optional[list[str]] = None
     expected_report_hours: Optional[int] = Field(default=None, ge=6, le=336)
     dns_checks_enabled: Optional[bool] = None
+    checks_muted_until: Optional[datetime] = None
 
 
 @router.get("/domains/{domain_name}/settings")
@@ -120,6 +121,11 @@ def write_domain_settings(
         probe_targets=payload.probe_targets,
         expected_report_hours=payload.expected_report_hours,
         dns_checks_enabled=payload.dns_checks_enabled,
+        checks_muted_until=payload.checks_muted_until,
+        clear_mute=(
+            "checks_muted_until" in payload.model_fields_set
+            and payload.checks_muted_until is None
+        ),
     )
     return serialise_settings(session, row)
 

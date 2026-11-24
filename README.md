@@ -40,6 +40,9 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
 - **Runs itself.** An in-process scheduler re-checks every few hours, evaluates alerts,
   reverse-resolves sending IPs, and reports every run in the UI. No cron, Redis or Celery.
 - **Multi-domain.** A fleet view plus a per-domain drill-down with a domain picker.
+- **Share safely.** Signed, expiring, revocable read-only links for one domain or the whole
+  fleet — no account required. Raw reports, search, alert settings and the admin area stay
+  private.
 - **Report browser.** Search, filter, inspect every record, download the original XML/JSON.
 - **Boring to operate.** One container, one SQLite file, no external services, no
   telemetry, no third-party IP lookups (GeoIP is local).
@@ -51,6 +54,10 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
 | TLS delivery | Report browser |
 | --- | --- |
 | ![TLS delivery](docs/screenshots/tls.png) | ![Reports](docs/screenshots/reports.png) |
+
+| Shared read-only view |
+| --- |
+| ![Shared view](docs/screenshots/shared.png) |
 
 ---
 
@@ -264,6 +271,18 @@ the usual system bundles), because some python.org builds ship a stale one. If a
 `--insecure` as a last resort). Restart the container after adding the file so the resolver
 picks it up. Without a database the app runs normally; countries render as *Unknown*.
 
+Country is resolved **when a report is ingested**. Rows imported before the database was
+present keep their empty country until you backfill them:
+
+```bash
+docker compose exec dmarcview python -m app.cli geo-enrich
+# or, outside Docker:
+python -m app.cli geo-enrich
+```
+
+`--all` re-resolves every IP instead of only rows with no country. Reload the dashboard
+afterwards; the command reports IPs, resolved IPs and updated rows.
+
 > IP Geolocation by [DB-IP](https://db-ip.com) (CC BY 4.0). MaxMind GeoLite2 also works —
 > point `GEOIP_DB` / `GEOIP_ASN_DB` at the `.mmdb` files.
 
@@ -279,6 +298,7 @@ python -m app.cli sync                # one JMAP sync (cron-friendly)
 python -m app.cli import samples/*.eml  # offline import of .eml / .zip
 python -m app.cli migrate             # apply database migrations
 python -m app.cli backup --keep 14    # consistent SQLite snapshot
+python -m app.cli geo-enrich          # backfill countries for existing rows
 python -m app.cli stats               # row counts
 ```
 
@@ -332,6 +352,10 @@ Everything below requires the session cookie (obtained via `POST /api/auth/login
 | `PUT` | `/api/alerts/rules/{id}` | Enable/disable, thresholds and cooldown |
 | `POST` | `/api/alerts/run` | Evaluate all rules now |
 | `POST` | `/api/alerts/test` | Send a test notification |
+| `GET` | `/api/share-links` | List active/revoked share links |
+| `POST` | `/api/share-links` | Create a signed read-only link |
+| `POST` | `/api/share-links/{id}/revoke` | Revoke a link immediately |
+| `GET` | `/api/public/{token}` | Unauthenticated read-only dashboard payload |
 | `GET` | `/api/storage` | Database, archive and backup sizes |
 | `GET` | `/api/jobs` | Scheduled jobs and their last run |
 | `GET` | `/api/health` | Unauthenticated liveness probe |
@@ -370,9 +394,9 @@ Everything below requires the session cookie (obtained via `POST /api/auth/login
 ## Roadmap
 
 v1.2 added alerting over SMTP, Telegram, Signal and webhooks; v1.3 added sender identities
-and period-over-period changes; v1.4 completes analytics with a robust volume anomaly score
-(fed into `volume_spike`), coverage reporting, and URL-backed filters. Next up: read-only
-share links, export and retention. Sequencing, effort estimates and the
+and period-over-period changes; v1.4 completed analytics with a robust volume anomaly score,
+coverage reporting and URL-backed filters. v1.5 adds signed read-only share links and the
+remaining quick wins. Next up: export, fleet comparison and retention. Sequencing, effort estimates and the
 decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
@@ -381,7 +405,7 @@ decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (77 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (84 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -460,6 +484,21 @@ SQLite or backups:
 
 With no channel configured the incidents are still recorded and visible; the page explains
 which variables are missing. **Send test** per channel verifies the wiring.
+
+## Read-only sharing
+
+Use the **Share** button in the topbar. Choose a domain (or all), an expiry of 7–90 days, and
+whether sending sources are included. The link is shown once; only its hash is stored, so it
+can be revoked but not recovered.
+
+- Path: `/s/<token>` — signed with `SECRET_KEY`, default 7 days, hard cap 90 days.
+- Public view: aggregates and TLS summaries only; raw reports, search, ingest and alert
+  configuration are not exposed.
+- Sources are opt-in. Even when enabled, envelope from/to, sender identities and other
+  header-from domains are removed.
+- Responses set `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex` and `no-store`, with
+  a per-token rate limit.
+- Revoke from the same drawer; the public link fails immediately.
 
 ## Backups & retention
 

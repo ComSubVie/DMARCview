@@ -53,6 +53,8 @@ def update_settings(
     probe_targets: Optional[list[str]] = None,
     expected_report_hours: Optional[int] = None,
     dns_checks_enabled: Optional[bool] = None,
+    checks_muted_until: Optional[datetime] = None,
+    clear_mute: bool = False,
 ) -> DomainSettings:
     row = get_settings_row(session, domain)
     if dkim_selectors is not None:
@@ -68,6 +70,14 @@ def update_settings(
         row.expected_report_hours = max(6, min(expected_report_hours, 24 * 14))
     if dns_checks_enabled is not None:
         row.dns_checks_enabled = dns_checks_enabled
+    if clear_mute:
+        row.checks_muted_until = None
+    elif checks_muted_until is not None:
+        row.checks_muted_until = (
+            checks_muted_until
+            if checks_muted_until.tzinfo
+            else checks_muted_until.replace(tzinfo=timezone.utc)
+        )
     row.updated_at = utcnow()
     session.add(row)
     session.commit()
@@ -83,6 +93,7 @@ def serialise_settings(session: Session, domain: Domain) -> dict[str, Any]:
         "probe_targets": row.probe_targets,
         "expected_report_hours": row.expected_report_hours,
         "dns_checks_enabled": row.dns_checks_enabled,
+        "checks_muted_until": _iso(row.checks_muted_until),
         "updated_at": _iso(row.updated_at),
     }
 

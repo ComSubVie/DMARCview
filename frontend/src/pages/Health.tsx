@@ -45,6 +45,97 @@ function CheckCard({ result }: { result: HealthCheckResult }) {
   );
 }
 
+function DomainProfileCard({ domain }: { domain: string }) {
+  const { toast, refresh } = useData();
+  const [displayName, setDisplayName] = useState("");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .domainProfile(domain)
+      .then((profile) => {
+        if (cancelled) return;
+        setDisplayName(profile.display_name ?? "");
+        setNotes(profile.notes ?? "");
+      })
+      .catch(() => {
+        /* the profile is optional; the rest of the page still works */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [domain]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.updateDomainProfile(domain, {
+        display_name: displayName.trim() || null,
+        notes: notes.trim() || null,
+      });
+      await refresh();
+      toast("Domain profile saved");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Could not save the domain profile", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="card settings-card">
+      <div className="card-head">
+        <div>
+          <h2 className="card-title">Domain profile</h2>
+          <p className="card-sub">Display name and private notes for this domain</p>
+        </div>
+      </div>
+      <div className="card-body">
+        <div className="settings-grid">
+          <div className="field">
+            <label htmlFor="domain-display-name">Display name</label>
+            <input
+              id="domain-display-name"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              placeholder={domain}
+            />
+            <span className="tiny muted">Shown in the domain picker instead of the raw name.</span>
+          </div>
+          <div className="field span-2">
+            <label htmlFor="domain-notes">Notes</label>
+            <textarea
+              id="domain-notes"
+              rows={2}
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Owner, registrar, migration notes…"
+            />
+            <span className="tiny muted">Stored locally; never included in share links.</span>
+          </div>
+        </div>
+        <div className="actions-row">
+          <button className="btn primary" onClick={save} disabled={saving} type="button">
+            {saving ? <span className="spinner" /> : null}
+            Save profile
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function toLocalInput(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`;
+}
+
 function SettingsCard({
   health,
   onSaved,
@@ -57,6 +148,7 @@ function SettingsCard({
   const [targets, setTargets] = useState("");
   const [hours, setHours] = useState(48);
   const [enabled, setEnabled] = useState(true);
+  const [mutedUntil, setMutedUntil] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -64,6 +156,7 @@ function SettingsCard({
     setTargets(health.settings.probe_targets.join("\n"));
     setHours(health.settings.expected_report_hours);
     setEnabled(health.settings.dns_checks_enabled);
+    setMutedUntil(toLocalInput(health.settings.checks_muted_until));
   }, [health.settings]);
 
   async function save() {
@@ -80,6 +173,7 @@ function SettingsCard({
           .filter(Boolean),
         expected_report_hours: hours,
         dns_checks_enabled: enabled,
+        checks_muted_until: mutedUntil ? new Date(mutedUntil).toISOString() : null,
       });
       onSaved(updated);
       toast("Health settings saved");
@@ -142,6 +236,19 @@ function SettingsCard({
               onChange={(event) => setHours(Number(event.target.value))}
             />
             <span className="tiny muted">Used for report-gap detection and alerting.</span>
+          </div>
+          <div className="field">
+            <label htmlFor="mute-until">Mute scheduled checks until</label>
+            <input
+              id="mute-until"
+              type="datetime-local"
+              value={mutedUntil}
+              onChange={(event) => setMutedUntil(event.target.value)}
+            />
+            <span className="tiny muted">
+              Health checks and transport probes skip this domain until then. Manual runs still
+              work. Leave empty to unmute.
+            </span>
           </div>
           <div className="field span-2">
             <label htmlFor="targets">Extra probe targets</label>
@@ -516,6 +623,7 @@ export function HealthPage() {
         </section>
       </div>
 
+      <DomainProfileCard domain={health.domain} />
       <SettingsCard
         health={health}
         onSaved={(settings) => setHealth({ ...health, settings })}

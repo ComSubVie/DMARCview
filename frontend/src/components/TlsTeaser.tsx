@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { formatNumber } from "../lib/format";
 import type { TlsSummary } from "../types";
 
-export function TlsTeaser({ tls }: { tls: TlsSummary }) {
+export function TlsTeaser({ tls, readonly = false }: { tls: TlsSummary; readonly?: boolean }) {
   const safe = tls.failure === 0 && tls.sessions > 0;
   return (
     <section className="card teaser">
@@ -37,10 +37,12 @@ export function TlsTeaser({ tls }: { tls: TlsSummary }) {
           </p>
         </>
       )}
-      <Link className="link" to="/tls" style={{ marginTop: 10 }}>
-        Open TLS delivery
-        <ArrowRight size={13} />
-      </Link>
+      {!readonly ? (
+        <Link className="link" to="/tls" style={{ marginTop: 10 }}>
+          Open TLS delivery
+          <ArrowRight size={13} />
+        </Link>
+      ) : null}
     </section>
   );
 }

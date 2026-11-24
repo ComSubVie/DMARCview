@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, Download, FileText, Search, ShieldAlert } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, ApiError, rawReportUrl } from "../api";
 import { Drawer } from "../components/Drawer";
 import { Badge, CheckCell, CopyButton, EmptyState, Skeleton } from "../components/ui";
@@ -211,9 +212,10 @@ function Row({ report, onOpen }: { report: ReportRow; onOpen: () => void }) {
 
 export function ReportsPage() {
   const { domain, days } = useData();
-  const [page, setPage] = useState(1);
-  const [query, setQuery] = useState("");
-  const [debounced, setDebounced] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [page, setPage] = useState(() => Math.max(1, Number(searchParams.get("page")) || 1));
+  const [query, setQuery] = useState(() => searchParams.get("q") || "");
+  const [debounced, setDebounced] = useState(() => searchParams.get("q") || "");
   const [data, setData] = useState<ReportsPageData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -234,6 +236,18 @@ export function ReportsPage() {
     }, 280);
     return () => window.clearTimeout(timer);
   }, [query]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    if (debounced) next.set("q", debounced);
+    else next.delete("q");
+    if (page > 1) next.set("page", String(page));
+    else next.delete("page");
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [debounced, page, searchParams, setSearchParams]);
+
 
   useEffect(() => {
     let cancelled = false;

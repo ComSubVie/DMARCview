@@ -273,7 +273,25 @@ class DomainSettings(SQLModel, table=True):
     probe_targets: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     expected_report_hours: int = Field(default=48)
     dns_checks_enabled: bool = Field(default=True)
+    checks_muted_until: Optional[datetime] = Field(default=None)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class ShareLink(SQLModel, table=True):
+    """A signed, revocable read-only link. Only the token hash is stored."""
+
+    __tablename__ = "share_links"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    token_hash: str = Field(unique=True, index=True, max_length=64)
+    domain_id: Optional[int] = Field(default=None, foreign_key="domains.id", index=True)
+    days: int = Field(default=7)
+    include_sources: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=utcnow)
+    expires_at: datetime = Field(default_factory=utcnow)
+    revoked_at: Optional[datetime] = Field(default=None)
+    last_used_at: Optional[datetime] = Field(default=None)
+    uses: int = Field(default=0)
 
 
 class JobRun(SQLModel, table=True):

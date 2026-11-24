@@ -1,10 +1,11 @@
 # Roadmap
 
-_Rev 8 · 24 November 2026 · analytics phase complete (v1.4)_
+_Rev 9 · 24 November 2026 · share links and quick wins delivered (v1.5)_
 
 v1 answered **"what happened?"**; v1.1 added **"is my configuration correct?"**; v1.2 added
-**"tell me when it changes"**; v1.4 completes the analytics phase — **why it changed**.
-Next comes distribution: read-only share links, export and retention.
+**"tell me when it changes"**; v1.4 completed **why it changed**; v1.5 starts distribution with
+signed read-only share links and finishes the quick-win list. Next: export, fleet comparison and
+retention.
 
 ## Delivered so far
 
@@ -23,7 +24,9 @@ Next comes distribution: read-only share links, export and retention.
 | **Anomaly score** | Robust z-score (MAD, standard-deviation fallback when MAD is 0) of the latest reporting day against the trailing 28-day baseline; shown on the volume card when \|z\| ≥ 2 and used by the `volume_spike` alert rule (`min_z`). |
 | **URL filters** | Domain and period persist in `?domain=&days=`, so dashboard views are bookmarkable and survive reloads. |
 | **Coverage** | Reporter coverage (silent reporters vs the previous period), other header-from domains checked against the effective `sp=` policy, and the `pct=` ramp timeline. |
-| **Tests** | 77 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage. |
+| **Share links** | HMAC-signed, expiring, revocable read-only links; only token hashes stored; public dashboard/TLS view with sources optional and envelope identities stripped; usage tracking and revoke. |
+| **Quick wins** | Print stylesheet, editable domain display name/notes, report search persisted in the URL, and per-domain mute for scheduled health checks/probes (now actually honoured by the scheduler). |
+| **Tests** | 84 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage, share links, domain profile, check mute and GeoIP backfill. |
 
 Known limits: DNSSEC relies on the resolver's AD flag (no chain validation); BIMI checks
 presence only; probes need outbound port 25; alert rules are global (no per-domain overrides
@@ -36,21 +39,21 @@ or mute yet) and failed deliveries are recorded but not retried.
 | 1 | **SMTP + Telegram + Signal + webhook** alerts | Delivered. Signal runs through a `signal-cli` sidecar. |
 | 2 | App **may probe MX on 25** and other mail ports | Delivered: STARTTLS, certificates, DANE. |
 | 3 | **No off-box backup target yet**, retention undecided | Keep-forever default, local snapshots, growth panel; retention opt-in. |
-| 4 | **Single admin**; read-only **share links without authentication** later | No OIDC/SSO. Share links use signed, revocable tokens when built. |
+| 4 | **Single admin**; read-only **share links without authentication** | Delivered: signed, revocable tokens at `/s/<token>`, default 7 days, 90-day cap. No OIDC/SSO. |
 | 5 | **Analytics before sharing** (Rev 5, 24 Nov 2026) | No technical dependency; for a single-admin deployment, explaining changes is worth more than distributing them. Share links can move forward at any time if external access becomes necessary. |
 
 ## Remaining sequence
 
 | Phase | Theme | Effort | Status |
 | --- | --- | --- | --- |
-| **3.1** | Read-only share links | 2–3 d | **next** |
-| **3.2–3.3** | Export + fleet comparison table | 3–4 d | planned |
+| **3.2–3.3** | Export + fleet comparison table | 3–4 d | **next** |
+| **3.4** | Retention (archive + prune) | 0.5 d | when decided |
 | **4** | Forensic (RUF) reports | 3–4 d | optional |
 | **5** | Platform: Postgres, IMAP, tokens, metrics | 8–10 d | trigger-based |
 | **6b** | DMARCbis readiness | 2–4 d | when the RFC is final |
 
-≈ **18–25 focused engineer-days** remaining, tests included. Sharing, export and retention
-can be reordered freely.
+≈ **16–22 focused engineer-days** remaining, tests included. Export, retention and RUF can be
+reordered freely.
 
 ---
 
@@ -84,23 +87,20 @@ Phase 6a is complete; the next slice is distribution.
 
 ---
 
-## Phase 3 — Share links, export, fleet (6–8 days)
+## Phase 3 — Export, fleet, retention (4–5 days)
 
-Can move ahead of 6a if external sharing becomes urgent; it shares no code with analytics.
+### 3.1 Read-only share links (delivered)
 
-### 3.1 Read-only share links (2–3 d)
-
-- Token: `base64url(payload) + "." + base64url(HMAC-SHA256)`, payload
-  `{v, id, domain, days, include_sources, exp}`; link at `/s/<token>` (path, so it never
-  leaks through `Referer`).
-- Storage: `share_links(id, token_hash, domain, days, include_sources, created_at,
-  expires_at, revoked_at, last_used_at, uses)`; only the hash is stored.
-- API: `/api/public/<token>/…` serves dashboard and TLS summaries only — no raw reports, no
-  search, no ingest, no alert config; envelope from/to stripped even when sources are shown.
-- Hardening: `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`, `no-store`, no cookies,
+- Token: `base64url(payload) + "." + base64url(HMAC-SHA256)` with `{v, id, domain, days,
+  include_sources, exp}`, served at `/s/<token>` (path, so it never leaks through `Referer`).
+- Storage: `share_links` keeps only the token hash, scope, expiry, revoke, last use and uses.
+- Public API: dashboard/TLS summaries only — no raw reports, search, ingest or alert config.
+  Sources are opt-in; envelope from/to, identities and other header-from domains are always
+  stripped.
+- Hardening: `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`, `no-store`,
   per-token rate limit, 7-day default / 90-day cap.
-- UI: Share button with scope/expiry/include-sources, active links with revoke, read-only
-  shared shell with a "shared view" badge.
+- UI: topbar Share drawer with scope/expiry/include-sources, copy-once URL, active links and
+  revoke; `/s/<token>` renders a read-only shell with a shared-view badge.
 
 ### 3.2 Export (2 d)
 
@@ -155,14 +155,9 @@ After the RFC is final:
 
 ## Quick wins
 
-Done: report-gap banner, copy-to-clipboard for policies and report IDs.
-
-Remaining (<1 day each):
-
-- Print stylesheet for the dashboard.
-- Editable domain display names and notes (`domains.notes` already exists).
-- Reports search persisted in the URL (domain and period already are).
-- Per-domain mute for scheduled checks.
+All planned quick wins are shipped: report-gap banner, copy-to-clipboard, URL-backed
+domain/period/report-search filters, print stylesheet, editable domain profiles, and
+per-domain scheduled-check mute.
 
 ---
 
@@ -182,4 +177,4 @@ Remaining (<1 day each):
 1. **Off-box backup:** when a target appears, the local snapshot format is what it syncs.
 2. **Retention:** revisit once the storage panel shows real growth.
 3. **Alert follow-ups:** per-domain overrides and delivery retry after real-world use.
-4. **Share-link defaults:** expiry and whether "include sources" is allowed.
+4. **Share-link rate limit:** currently per-process memory; revisit if multiple workers/replicas are added.

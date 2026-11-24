@@ -219,6 +219,21 @@ def test_dashboard_changes(auth_client: TestClient, session: Session):
     assert changes["chips"][0]["display"].endswith("%")
 
 
+def test_domain_profile(auth_client: TestClient):
+    upload_all(auth_client)
+    updated = auth_client.put(
+        "/api/domains/tgm.rocks/profile",
+        json={"display_name": "TGM Rocks", "notes": "owner: ops"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["display_name"] == "TGM Rocks"
+    profile = auth_client.get("/api/domains/tgm.rocks/profile").json()
+    assert profile["notes"] == "owner: ops"
+    meta = auth_client.get("/api/meta").json()
+    entry = next(item for item in meta["domains"] if item["name"] == "tgm.rocks")
+    assert entry["display_name"] == "TGM Rocks"
+
+
 def test_dashboard_coverage(auth_client: TestClient):
     upload_all(auth_client)
     data = auth_client.get("/api/dashboard?domain=tgm.rocks").json()

@@ -8,11 +8,13 @@ export function PolicyCard({
   advice,
   overview = [],
   fleet = false,
+  readonly = false,
 }: {
   policy: Policy | null;
   advice: Advice;
   overview?: PolicyOverviewItem[];
   fleet?: boolean;
+  readonly?: boolean;
 }) {
   if (fleet) {
     return (
@@ -43,12 +45,14 @@ export function PolicyCard({
             Pick a domain in the toolbar to see its recommendation, sending sources and policy
             history.
           </p>
-          <div style={{ marginTop: 14 }}>
-            <Link className="btn green lg" to="/reports">
-              Review reports
-              <ArrowRight size={15} />
-            </Link>
-          </div>
+          {!readonly ? (
+            <div style={{ marginTop: 14 }}>
+              <Link className="btn green lg" to="/reports">
+                Review reports
+                <ArrowRight size={15} />
+              </Link>
+            </div>
+          ) : null}
         </div>
       </section>
     );
@@ -112,16 +116,18 @@ export function PolicyCard({
           {advice.advice}
         </p>
 
-        <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <Link className="btn green lg" to="/reports">
-            Review reports
-            <ArrowRight size={15} />
-          </Link>
-          <Link className="link" to="/ingest">
-            <Sparkles size={13} />
-            See raw reports
-          </Link>
-        </div>
+        {!readonly ? (
+          <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <Link className="btn green lg" to="/reports">
+              Review reports
+              <ArrowRight size={15} />
+            </Link>
+            <Link className="link" to="/ingest">
+              <Sparkles size={13} />
+              See raw reports
+            </Link>
+          </div>
+        ) : null}
       </div>
     </section>
   );

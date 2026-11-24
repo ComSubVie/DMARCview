@@ -8,8 +8,8 @@ from datetime import date, datetime, timedelta, timezone
 from sqlmodel import Session, select
 
 from app.health.dns import Lookup
-from app.jobs import job_ptr_enrichment
-from app.models import Domain, IpMeta, Report, SourceRecord
+from app.jobs import _scheduled_checks_disabled, job_ptr_enrichment
+from app.models import Domain, DomainSettings, IpMeta, Report, SourceRecord
 
 
 class FakePtrDns:
@@ -72,3 +72,28 @@ def test_ptr_enrichment_stores_full_ip(session: Session, monkeypatch):
 
     again = asyncio.run(job_ptr_enrichment())
     assert again == {"looked_up": 0, "pending": 0}
+
+
+def test_scheduled_checks_respect_mute_and_toggle(session: Session):
+    domain = Domain(name="mute.example")
+    session.add(domain)
+    session.commit()
+    session.refresh(domain)
+    settings = DomainSettings(
+        domain_id=domain.id,
+        checks_muted_until=datetime.now(timezone.utc) + timedelta(hours=2),
+    )
+    session.add(settings)
+    session.commit()
+
+    assert _scheduled_checks_disabled(session, domain.id, datetime.now(timezone.utc)) is True
+
+    settings.checks_muted_until = datetime.now(timezone.utc) - timedelta(hours=1)
+    session.add(settings)
+    session.commit()
+    assert _scheduled_checks_disabled(session, domain.id, datetime.now(timezone.utc)) is False
+
+    settings.dns_checks_enabled = False
+    session.add(settings)
+    session.commit()
+    assert _scheduled_checks_disabled(session, domain.id, datetime.now(timezone.utc)) is True

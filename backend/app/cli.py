@@ -24,7 +24,8 @@ from .config import get_settings
 from .db import get_engine, init_db
 from .ingest.jmap import JMAPClient
 from .ingest.service import ingest_files
-from .models import ProcessedMessage, Report, TlsReport
+from .geoip import get_geo_resolver
+from .models import ProcessedMessage, Report, SourceRecord, TlsFailure, TlsReport
 from .security import hash_password
 
 
@@ -125,6 +126,57 @@ def cmd_backup(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_geo_enrich(args: argparse.Namespace) -> int:
+    """Backfill country data for rows ingested before the GeoIP database existed."""
+    init_db()
+    geo = get_geo_resolver()
+    if not geo.available:
+        print(
+            "No GeoIP database is loaded. Put dbip-country-lite.mmdb in data/geoip/ "
+            "(or set GEOIP_DB), restart, then rerun.",
+            file=sys.stderr,
+        )
+        return 1
+    with Session(get_engine()) as session:
+        source_stmt = select(SourceRecord.source_ip).where(SourceRecord.source_ip.is_not(None))
+        tls_stmt = select(TlsFailure.sending_mta_ip).where(TlsFailure.sending_mta_ip.is_not(None))
+        if not args.all:
+            source_stmt = source_stmt.where(SourceRecord.country_code.is_(None))
+            tls_stmt = tls_stmt.where(TlsFailure.country_code.is_(None))
+        ips = set(session.exec(source_stmt.distinct()).all())
+        ips.update(session.exec(tls_stmt.distinct()).all())
+        ips = {ip for ip in ips if ip}
+
+        from sqlalchemy import update
+
+        resolved = rows = 0
+        for ip in sorted(ips):
+            code, name = geo.lookup(ip)
+            if not code:
+                continue
+            resolved += 1
+            source_where = [SourceRecord.source_ip == ip]
+            tls_where = [TlsFailure.sending_mta_ip == ip]
+            if not args.all:
+                source_where.append(SourceRecord.country_code.is_(None))
+                tls_where.append(TlsFailure.country_code.is_(None))
+            result = session.exec(
+                update(SourceRecord)
+                .where(*source_where)
+                .values(country_code=code, country_name=name)
+            )
+            rows += result.rowcount or 0
+            result = session.exec(
+                update(TlsFailure)
+                .where(*tls_where)
+                .values(country_code=code, country_name=name)
+            )
+            rows += result.rowcount or 0
+        session.commit()
+    print(f"ips={len(ips)} resolved={resolved} rows={rows} unresolved={len(ips) - resolved}")
+    return 0
+
+
 def cmd_stats(_args: argparse.Namespace) -> int:
     init_db()
     with Session(get_engine()) as session:
@@ -163,6 +215,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--destination", help="directory for the snapshot")
     p.add_argument("--keep", type=int, default=None, help="number of snapshots to keep")
     p.set_defaults(func=cmd_backup)
+
+    p = sub.add_parser("geo-enrich", help="backfill countries for existing report rows")
+    p.add_argument("--all", action="store_true", help="re-resolve every IP, not only unknown rows")
+    p.set_defaults(func=cmd_geo_enrich)
 
     p = sub.add_parser("stats", help="print row counts")
     p.set_defaults(func=cmd_stats)

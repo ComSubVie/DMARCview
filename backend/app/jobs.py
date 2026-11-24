@@ -22,9 +22,24 @@ from .alerts.service import evaluate as evaluate_alerts
 from .geoip import get_asn_resolver
 from .health.dns import get_dns_client
 from .health.service import run_and_store_health, run_and_store_probes
-from .models import Domain, IpMeta, JobRun, SourceRecord, utcnow
+from .models import Domain, DomainSettings, IpMeta, JobRun, SourceRecord, utcnow
 
 log = logging.getLogger(__name__)
+
+
+def _scheduled_checks_disabled(session: Session, domain_id: int, now: datetime) -> bool:
+    row = session.get(DomainSettings, domain_id)
+    if row is None:
+        return False
+    if not row.dns_checks_enabled:
+        return True
+    muted = row.checks_muted_until
+    if muted is not None:
+        if muted.tzinfo is None:
+            muted = muted.replace(tzinfo=timezone.utc)
+        if muted > now:
+            return True
+    return False
 
 
 def _now_iso() -> str:
@@ -36,10 +51,14 @@ async def job_health_checks() -> dict:
         domains = session.exec(select(Domain).order_by(Domain.name)).all()
     ok = failed = skipped = 0
     errors: list[str] = []
+    now = utcnow()
     for domain in domains:
         with Session(get_engine()) as session:
             current = session.get(Domain, domain.id)
             if current is None:  # deleted between listing and run
+                skipped += 1
+                continue
+            if _scheduled_checks_disabled(session, current.id, now):
                 skipped += 1
                 continue
             try:
@@ -55,12 +74,16 @@ async def job_health_checks() -> dict:
 async def job_transport_probes() -> dict:
     with Session(get_engine()) as session:
         domains = session.exec(select(Domain).order_by(Domain.name)).all()
-    ok = failed = targets = 0
+    ok = failed = targets = skipped = 0
     errors: list[str] = []
+    now = utcnow()
     for domain in domains:
         with Session(get_engine()) as session:
             current = session.get(Domain, domain.id)
             if current is None:
+                continue
+            if _scheduled_checks_disabled(session, current.id, now):
+                skipped += 1
                 continue
             try:
                 results = await run_and_store_probes(session, current)
@@ -70,7 +93,14 @@ async def job_transport_probes() -> dict:
             except Exception as exc:  # noqa: BLE001
                 log.warning("transport probe failed for %s: %s", current.name, exc)
                 errors.append(f"{current.name}: {exc}")
-    return {"domains": len(domains), "targets": targets, "ok": ok, "failed": failed, "errors": errors[:5]}
+    return {
+        "domains": len(domains),
+        "targets": targets,
+        "ok": ok,
+        "failed": failed,
+        "skipped": skipped,
+        "errors": errors[:5],
+    }
 
 
 async def job_alerts() -> dict:

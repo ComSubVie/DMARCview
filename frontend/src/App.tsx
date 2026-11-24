@@ -8,6 +8,7 @@ import { HealthPage } from "./pages/Health";
 import { IngestPage } from "./pages/Ingest";
 import { Login } from "./pages/Login";
 import { ReportsPage } from "./pages/Reports";
+import { SharedView } from "./pages/SharedView";
 import { TlsPage } from "./pages/Tls";
 import { DataProvider } from "./state";
 
@@ -68,6 +69,17 @@ export default function App() {
     window.addEventListener("dmarc:unauthorized", handler);
     return () => window.removeEventListener("dmarc:unauthorized", handler);
   }, []);
+
+  if (window.location.pathname.startsWith("/s/")) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/s/:token" element={<SharedView />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+    );
+  }
 
   if (auth.loading) return <Splash />;
   if (!auth.user) return <Login onSuccess={(username) => setAuth({ loading: false, user: username })} />;

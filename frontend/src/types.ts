@@ -1,3 +1,9 @@
+export interface DomainProfile {
+  name: string;
+  display_name: string | null;
+  notes: string | null;
+}
+
 export interface DomainRef {
   id: number;
   name: string;
@@ -524,6 +530,7 @@ export interface DomainSettings {
   probe_targets: string[];
   expected_report_hours: number;
   dns_checks_enabled: boolean;
+  checks_muted_until: string | null;
   updated_at: string | null;
 }
 
@@ -657,4 +664,33 @@ export interface AlertTestResult {
   ok: boolean;
   results: { channel: string; ok: boolean; error: string | null }[];
   error?: string;
+}
+
+
+export interface ShareLinkItem {
+  id: number;
+  domain: string | null;
+  days: number;
+  include_sources: boolean;
+  created_at: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+  last_used_at: string | null;
+  uses: number;
+  revoked: boolean;
+}
+
+export interface CreatedShareLink extends ShareLinkItem {
+  token: string;
+  url: string;
+}
+
+export interface PublicShareView {
+  scope: {
+    domain: string | null;
+    days: number;
+    include_sources: boolean;
+    expires_at: string;
+  };
+  dashboard: Dashboard;
 }

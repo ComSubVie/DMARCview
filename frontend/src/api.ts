@@ -99,14 +99,38 @@ export const api = {
       probe_targets?: string[];
       expected_report_hours?: number;
       dns_checks_enabled?: boolean;
+      checks_muted_until?: string | null;
     },
   ) =>
     request<import("./types").DomainSettings>(
       `/domains/${encodeURIComponent(domain)}/settings`,
       { method: "PUT", body: JSON.stringify(payload) },
     ),
+  domainProfile: (domain: string) =>
+    request<import("./types").DomainProfile>(`/domains/${encodeURIComponent(domain)}/profile`),
+  updateDomainProfile: (
+    domain: string,
+    payload: { display_name?: string | null; notes?: string | null },
+  ) =>
+    request<import("./types").DomainProfile>(`/domains/${encodeURIComponent(domain)}/profile`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
   storage: () => request<import("./types").StorageInfo>("/storage"),
   jobs: () => request<import("./types").JobsResponse>("/jobs"),
+
+  shareLinks: () =>
+    request<{ items: import("./types").ShareLinkItem[] }>("/share-links"),
+  createShareLink: (payload: { domain?: string | null; days?: number; include_sources?: boolean }) =>
+    request<import("./types").CreatedShareLink>("/share-links", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  revokeShareLink: (id: number) =>
+    request<import("./types").ShareLinkItem>(`/share-links/${id}/revoke`, { method: "POST" }),
+  publicView: (token: string) =>
+    request<import("./types").PublicShareView>(`/public/${encodeURIComponent(token)}`),
 
   alerts: () => request<import("./types").AlertsPayload>("/alerts"),
   updateAlertRule: (
