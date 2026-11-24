@@ -18,6 +18,8 @@ import base64
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email.message import EmailMessage
+from email import policy
 from typing import Any, Optional
 from urllib.parse import quote, urljoin
 
@@ -51,7 +53,9 @@ def _is_unsupported_filter(exc: JMAPError) -> bool:
 
 CORE = "urn:ietf:params:jmap:core"
 MAIL = "urn:ietf:params:jmap:mail"
+SUBMISSION = "urn:ietf:params:jmap:submission"
 USING = [CORE, MAIL]
+USING_SUBMISSION = [CORE, MAIL, SUBMISSION]
 
 
 class JMAPError(RuntimeError):
@@ -65,6 +69,7 @@ class JMAPError(RuntimeError):
 class JMAPSession:
     api_url: str
     download_url: str
+    upload_url: str
     account_id: str
     username: str
     raw: dict[str, Any]
@@ -150,6 +155,9 @@ class JMAPClient:
         download_url = data.get("downloadUrl") or urljoin(
             self.base_url + "/", "/jmap/download/{accountId}/{blobId}/{name}?accept={type}"
         )
+        upload_url = data.get("uploadUrl") or "/jmap/upload/{accountId}/"
+        if not upload_url.startswith(("http://", "https://")):
+            upload_url = f"{self.base_url}/{upload_url.lstrip('/')}"
         accounts = data.get("primaryAccounts") or {}
         account_id = accounts.get(MAIL)
         if not account_id:
@@ -164,6 +172,7 @@ class JMAPClient:
         self._session = JMAPSession(
             api_url=api_url,
             download_url=download_url,
+            upload_url=upload_url,
             account_id=account_id,
             username=(data.get("username") or self.username),
             raw=data,
@@ -367,6 +376,136 @@ class JMAPClient:
         url = urljoin(self.base_url + "/", url)
         response = await self._request("GET", url, headers={"Accept": accept})
         return response.content
+
+    async def submit_message(
+        self,
+        subject: str,
+        body: str,
+        recipients: list[str],
+        *,
+        from_addr: str = "",
+        html: Optional[str] = None,
+    ) -> str:
+        """Upload a MIME message, import it as a draft and submit it over JMAP.
+
+        Returns the EmailSubmission id. The sender address comes from the
+        supplied ``from_addr`` or the account's first identity.
+        """
+        recipients = [item.strip() for item in recipients if item and item.strip()]
+        if not recipients:
+            raise JMAPError("JMAP submission has no recipients")
+        session = await self.session()
+        identities = await self.call(
+            [["Identity/get", {"accountId": session.account_id}, "identities"]],
+            using=USING_SUBMISSION,
+        )
+        identity_list = (identities.get("identities") or {}).get("list") or []
+        if not identity_list:
+            raise JMAPError("JMAP account has no submission identity")
+        wanted = from_addr.strip().lower()
+        identity = next(
+            (item for item in identity_list if str(item.get("email", "")).lower() == wanted),
+            identity_list[0],
+        )
+        sender = wanted and from_addr or str(identity.get("email") or from_addr)
+        if not sender:
+            raise JMAPError("JMAP submission has no sender address")
+
+        message = EmailMessage()
+        message["From"] = sender
+        message["To"] = ", ".join(recipients)
+        message["Subject"] = subject
+        message.set_content(body)
+        if html:
+            message.add_alternative(html, subtype="html")
+        raw = message.as_bytes(policy=policy.SMTP)
+
+        upload = await self._request(
+            "POST",
+            self._session_url(session.upload_url, "accountId", session.account_id),
+            content=raw,
+            headers={"Content-Type": "message/rfc822"},
+        )
+        try:
+            blob_id = upload.json().get("blobId")
+        except ValueError as exc:
+            raise JMAPError("JMAP upload did not return JSON") from exc
+        if not blob_id:
+            raise JMAPError("JMAP upload returned no blobId")
+
+        mailboxes = await self.list_mailboxes()
+        drafts = next(
+            (box for box in mailboxes if (box.get("role") or "").lower() == "drafts"), None
+        )
+        if drafts is None:
+            raise JMAPError("JMAP account has no Drafts mailbox for submission")
+        sent = next((box for box in mailboxes if (box.get("role") or "").lower() == "sent"), None)
+
+        imported = await self.call(
+            [
+                [
+                    "Email/import",
+                    {
+                        "accountId": session.account_id,
+                        "emails": {
+                            "draft": {
+                                "blobId": blob_id,
+                                "mailboxIds": {drafts["id"]: True},
+                                "keywords": {"$draft": True},
+                            }
+                        },
+                    },
+                    "import",
+                ]
+            ],
+            using=USING_SUBMISSION,
+        )
+        created = (imported.get("import") or {}).get("created") or {}
+        email_id = (created.get("draft") or {}).get("id")
+        if not email_id:
+            details = (imported.get("import") or {}).get("notCreated") or {}
+            raise JMAPError(f"JMAP Email/import failed: {details}", payload=details)
+
+        submission: dict[str, Any] = {
+            "emailId": email_id,
+            "identityId": identity.get("id"),
+            "envelope": {
+                "mailFrom": {"email": sender},
+                "rcptTo": [{"email": recipient} for recipient in recipients],
+            },
+        }
+        if sent is not None:
+            submission["onSuccessUpdateEmail"] = {
+                "#submission": {
+                    f"mailboxIds/{sent['id']}": True,
+                    f"mailboxIds/{drafts['id']}": None,
+                    "keywords/$draft": None,
+                    "keywords/$seen": True,
+                }
+            }
+        result = await self.call(
+            [
+                [
+                    "EmailSubmission/set",
+                    {
+                        "accountId": session.account_id,
+                        "create": {"submission": submission},
+                    },
+                    "submit",
+                ]
+            ],
+            using=USING_SUBMISSION,
+        )
+        submit_created = (result.get("submit") or {}).get("created") or {}
+        submission_id = (submit_created.get("submission") or {}).get("id")
+        if not submission_id:
+            details = (result.get("submit") or {}).get("notCreated") or {}
+            raise JMAPError(f"JMAP EmailSubmission/set failed: {details}", payload=details)
+        return str(submission_id)
+
+    @staticmethod
+    def _session_url(template: str, variable: str, value: str) -> str:
+        return template.replace("{" + variable + "}", quote(value, safe=""))
 
     async def probe(self) -> dict[str, Any]:
         """Used by the settings screen to validate the connection."""

@@ -849,6 +849,9 @@ export interface DigestStatus {
   days: number;
   recipients: string[];
   smtp_configured: boolean;
+  jmap_configured: boolean;
+  email_configured: boolean;
+  transport: "smtp" | "jmap" | null;
   last_sent_at: string | null;
 }
 

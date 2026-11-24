@@ -157,7 +157,12 @@ manual runs deliberately ignore the mute.**
 suppressed until the rule's cooldown passes; when the condition clears the open event is
 resolved and a resolution notice is sent. Do not create a second open event for the same key.
 
-**Alert channel credentials live only in the environment** (`SMTP_*`, `TELEGRAM_*`,
+**Email transport is selected explicitly or automatically.** `EMAIL_TRANSPORT=auto` prefers
+fully configured SMTP, falls back to JMAP on SMTP failure, and uses JMAP when SMTP is absent.
+`EMAIL_TRANSPORT=jmap` forces JMAP. JMAP submission reuses `JMAP_URL`/`JMAP_TOKEN` (or basic
+auth) and `JMAP_FROM`; it goes through `EmailSubmission/set`, not a second SMTP client.
+
+**Alert channel credentials live only in the environment** (`SMTP_*`, `JMAP_*`, `TELEGRAM_*`,
 `SIGNAL_*`, `WEBHOOK_*`). Never persist secrets in `alert_rules` or log them. Channel
 delivery must never block ingestion; failures are recorded on the event.
 
@@ -217,7 +222,7 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
 the user asks for them. Export, fleet comparison, retention, DMARCbis and decision support are
-delivered, including v1.12 operator visibility. No mandatory roadmap work remains. MFA stays
+delivered, including v1.13 JMAP email transport. No mandatory roadmap work remains. MFA stays
 parked; off-box backup, RUF and platform work remain optional/trigger-based.
 
 ## Security expectations

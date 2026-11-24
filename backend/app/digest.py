@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import case, func
 from sqlmodel import Session, select
 
-from .alerts.channels import send_smtp
+from .alerts.channels import send_email
 from .analytics import ALIGNED
 from .config import Settings
 from .models import AlertEvent, Domain, Report, SourceRecord, TlsPolicy, utcnow
@@ -159,18 +159,21 @@ def build_digest(session: Session, settings: Settings, *, days: int = 7) -> dict
 
 
 async def send_digest(session: Session, settings: Settings, *, days: int = 7) -> dict[str, Any]:
-    import asyncio
-
     digest = build_digest(session, settings, days=days)
     to = _parse_recipients(settings.digest_to, settings.alert_to)
     if not to:
         return {"ok": False, "error": "no digest or alert recipients configured", **digest}
-    result = await asyncio.to_thread(
-        send_smtp,
+    result = await send_email(
         settings,
         digest["subject"],
         digest["text"],
         html=digest["html"],
         to=to,
     )
-    return {"ok": result.ok, "error": result.error, "recipients": to, **digest}
+    return {
+        "ok": result.ok,
+        "error": result.error,
+        "transport": result.channel,
+        "recipients": to,
+        **digest,
+    }

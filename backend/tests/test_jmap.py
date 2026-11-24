@@ -14,6 +14,7 @@ SESSION_DOC = {
     "username": "dmarc@tgm.rocks",
     "apiUrl": "https://mail.example.com/jmap/api",
     "downloadUrl": "https://mail.example.com/download/{accountId}/{blobId}/{name}?accept={type}",
+    "uploadUrl": "https://mail.example.com/upload/{accountId}/",
     "primaryAccounts": {MAIL: "acc1"},
     "accounts": {
         "acc1": {"name": "dmarc@tgm.rocks", "accountCapabilities": {MAIL: {}}},
@@ -26,11 +27,15 @@ class MockServer:
         self.calls: list[tuple[str, dict]] = []
         self.authorization: str | None = None
         self.reject_after = False
+        self.uploaded: bytes = b""
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.authorization = request.headers.get("authorization")
         if request.method == "GET" and request.url.path == "/.well-known/jmap":
             return httpx.Response(200, json=SESSION_DOC)
+        if request.method == "POST" and request.url.path == "/upload/acc1/":
+            self.uploaded = request.content
+            return httpx.Response(200, json={"accountId": "acc1", "blobId": "blob-send", "type": "message/rfc822", "size": len(request.content)})
         if request.url.path == "/jmap/api":
             payload = json.loads(request.content)
             responses = []
@@ -45,6 +50,8 @@ class MockServer:
                                 "list": [
                                     {"id": "mb1", "name": "Inbox", "role": "inbox"},
                                     {"id": "mb2", "name": "DMARC", "role": None},
+                                    {"id": "mb3", "name": "Drafts", "role": "drafts"},
+                                    {"id": "mb4", "name": "Sent", "role": "sent"},
                                 ],
                             },
                             tag,
@@ -68,6 +75,25 @@ class MockServer:
                     ids = ["e1", "e2"] if ascending else ["e2", "e1"]
                     responses.append(
                         ["Email/query", {"accountId": "acc1", "ids": ids, "position": 0}, tag]
+                    )
+                elif name == "Identity/get":
+                    responses.append(
+                        [
+                            "Identity/get",
+                            {
+                                "accountId": "acc1",
+                                "list": [{"id": "id1", "email": "dmarc@tgm.rocks", "name": "DMARC"}],
+                            },
+                            tag,
+                        ]
+                    )
+                elif name == "Email/import":
+                    responses.append(
+                        ["Email/import", {"accountId": "acc1", "created": {"draft": {"id": "draft-1"}}}, tag]
+                    )
+                elif name == "EmailSubmission/set":
+                    responses.append(
+                        ["EmailSubmission/set", {"accountId": "acc1", "created": {"submission": {"id": "sub-1"}}}, tag]
                     )
                 elif name == "Email/get":
                     responses.append(
@@ -201,7 +227,7 @@ def test_probe_reports_mailbox_state():
     result = __import__("asyncio").run(run())
     assert result["ok"] is True
     assert result["report_mailbox"] == "DMARC"
-    assert len(result["mailboxes"]) == 2
+    assert len(result["mailboxes"]) == 4
 
 
 def test_full_sync_against_fake_client(monkeypatch, session):
@@ -266,3 +292,27 @@ def test_full_sync_against_fake_client(monkeypatch, session):
     assert again["reports"] == 0
     assert again["duplicates"] == 1
     assert session.exec(select(func.count(Report.id))).one() == 1
+
+
+def test_submit_message_uploads_imports_and_submits():
+    server = MockServer()
+    client = build_client(server)
+
+    async def run():
+        return await client.submit_message(
+            "Test digest",
+            "Hello",
+            ["ops@example.net"],
+            from_addr="dmarc@tgm.rocks",
+        )
+
+    submission_id = __import__("asyncio").run(run())
+    assert submission_id == "sub-1"
+    assert server.uploaded.startswith(b"From: dmarc@tgm.rocks")
+    assert b"Subject: Test digest" in server.uploaded
+    names = [name for name, _args in server.calls]
+    assert "Identity/get" in names
+    assert "Email/import" in names
+    assert "EmailSubmission/set" in names
+    submission = next(args for name, args in server.calls if name == "EmailSubmission/set")
+    assert submission["create"]["submission"]["envelope"]["rcptTo"] == [{"email": "ops@example.net"}]

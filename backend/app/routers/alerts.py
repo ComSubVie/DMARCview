@@ -208,11 +208,15 @@ def digest_status(session: Session = Depends(get_session)) -> dict:
     settings = get_settings()
     state = session.get(SyncState, "digest.last_sent_at")
     recipients = _parse_recipients(settings.digest_to, settings.alert_to)
+    transport = channels.email_transport(settings)
     return {
         "enabled": settings.digest_enabled,
         "days": settings.digest_days,
         "recipients": [item for item in recipients],
         "smtp_configured": channels.is_configured("smtp", settings),
+        "jmap_configured": channels.is_configured("jmap", settings),
+        "email_configured": transport is not None,
+        "transport": transport,
         "last_sent_at": state.value if state else None,
     }
 
@@ -230,6 +234,7 @@ async def run_digest(request: Request, session: Session = Depends(get_session)) 
         "error": result.get("error"),
         "domains": len(result.get("domains", [])),
         "period": result.get("period"),
+        "transport": result.get("transport"),
     }
 
 

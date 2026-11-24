@@ -29,6 +29,7 @@ const CHANNEL_ICONS: Record<string, ReactNode> = {
   telegram: <Send size={14} />,
   signal: <MessageCircle size={14} />,
   webhook: <Webhook size={14} />,
+  jmap: <Mail size={14} />,
 };
 
 function severityTone(severity: AlertSeverity): "bad" | "warn" | "info" {
@@ -91,7 +92,7 @@ function DigestCard() {
         <div className="digest-row">
           <span className="tiny muted">
             {status.enabled
-              ? `Every ${status.days} days · ${status.recipients.length} recipient${status.recipients.length === 1 ? "" : "s"}`
+              ? `Every ${status.days} days · ${status.recipients.length} recipient${status.recipients.length === 1 ? "" : "s"} · via ${status.transport ?? "no email transport"}`
               : "Set DIGEST_ENABLED=true and DIGEST_TO (or ALERT_TO) to enable"}
           </span>
           <span className="tiny muted">
@@ -101,7 +102,7 @@ function DigestCard() {
             className="btn ghost sm"
             type="button"
             onClick={() => void run()}
-            disabled={running || !status.smtp_configured || status.recipients.length === 0}
+            disabled={running || !status.email_configured || status.recipients.length === 0}
           >
             {running ? <span className="spinner" /> : <Mail size={13} />}
             Send now
@@ -336,7 +337,7 @@ export function AlertsPage() {
             <h2 className="card-title">Notification channels</h2>
             <p className="card-sub">Configured with environment variables · credentials never stored</p>
           </div>
-          <Badge tone={configured > 0 ? "good" : "warn"}>{configured}/4 ready</Badge>
+          <Badge tone={configured > 0 ? "good" : "warn"}>{configured}/{data.channels.length} ready</Badge>
         </div>
         <div className="card-body" style={{ paddingTop: 12 }}>
           <div className="channel-grid">

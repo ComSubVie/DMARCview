@@ -76,6 +76,7 @@ class Settings:
     jmap_password: str = ""
     jmap_token: str = ""
     jmap_mailbox: str = "DMARC"
+    jmap_from: str = ""
     jmap_poll_seconds: int = 300
     ingest_initial_days: int = 90
 
@@ -96,6 +97,7 @@ class Settings:
     digest_enabled: bool = False
     digest_to: str = ""
     digest_days: int = 7
+    email_transport: str = "auto"
     jobs_initial_delay_seconds: int = 25
 
     # Alerts
@@ -171,6 +173,7 @@ def _build_settings() -> Settings:
         jmap_password=_env("JMAP_PASSWORD"),
         jmap_token=_env("JMAP_TOKEN"),
         jmap_mailbox=_env("JMAP_MAILBOX", "DMARC"),
+        jmap_from=_env("JMAP_FROM") or _env("SMTP_FROM"),
         jmap_poll_seconds=max(30, _env_int("JMAP_POLL_SECONDS", 300)),
         ingest_initial_days=max(1, _env_int("INGEST_INITIAL_DAYS", 90)),
         geoip_db=_env("GEOIP_DB"),
@@ -187,6 +190,7 @@ def _build_settings() -> Settings:
         digest_enabled=_env_bool("DIGEST_ENABLED", False),
         digest_to=_env("DIGEST_TO"),
         digest_days=max(1, min(31, _env_int("DIGEST_DAYS", 7))),
+        email_transport=(_env("EMAIL_TRANSPORT", "auto").lower() or "auto"),
         jobs_initial_delay_seconds=max(5, _env_int("JOBS_INITIAL_DELAY_SECONDS", 25)),
         alerts_enabled=_env_bool("ALERTS_ENABLED", True),
         alert_interval_minutes=max(5, _env_int("ALERT_INTERVAL_MINUTES", 60)),

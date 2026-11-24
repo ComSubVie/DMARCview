@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlmodel import Session, select
 
+from dataclasses import replace
+
 from app.alerts import channels
 from app.alerts.channels import ChannelResult
 from app.alerts.service import ensure_rules, evaluate
@@ -313,6 +315,7 @@ def test_api_rules_and_manual_run(auth_client, session: Session):
     assert len(listing["rules"]) == len(listing["kinds"]) == 9
     assert {channel["kind"] for channel in listing["channels"]} == {
         "smtp",
+        "jmap",
         "telegram",
         "signal",
         "webhook",
@@ -337,3 +340,17 @@ def test_api_rules_and_manual_run(auth_client, session: Session):
     test = auth_client.post("/api/alerts/test", json={}).json()
     assert test["ok"] is False
     assert "No matching channel" in test["error"]
+
+
+def test_email_transport_selection_prefers_smtp_and_falls_back_to_jmap(monkeypatch):
+    from app.config import get_settings
+
+    base = get_settings()
+    smtp = replace(base, alert_to="ops@example.net", smtp_host="smtp.example", smtp_from="a@example.net", jmap_url="", jmap_token="")
+    jmap = replace(base, alert_to="ops@example.net", smtp_host="", jmap_url="https://mail.example", jmap_token="token")
+    both = replace(jmap, smtp_host="smtp.example", smtp_from="a@example.net")
+    forced = replace(both, email_transport="jmap")
+    assert channels.email_transport(smtp) == "smtp"
+    assert channels.email_transport(jmap) == "jmap"
+    assert channels.email_transport(both) == "smtp"
+    assert channels.email_transport(forced) == "jmap"

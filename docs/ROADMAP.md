@@ -1,13 +1,13 @@
 # Roadmap
 
-_Rev 18 · 24 November 2026 · v1.12 operator visibility_
+_Rev 19 · 24 November 2026 · JMAP email transport (v1.13)_
 
 DMARCView began as a self-hosted answer to **“what happened?”** and grew into a complete
 reporting and operations dashboard: **“is my configuration correct?”**, **“tell me when it
 changes”**, **“why did it change?”**, **“what should I do next?”**, and now **“can I prove what
 changed and who changed it?”**.
 
-**Current development release: v1.12.0.** The mandatory roadmap is complete. What remains is
+**Current development release: v1.13.0.** The mandatory roadmap is complete. What remains is
 optional, trigger-based or deliberately parked work.
 
 ## Delivered
@@ -17,7 +17,7 @@ optional, trigger-based or deliberately parked work.
 | **Ingestion** | JMAP polling with incremental cursor and full-mailbox backfill; DMARC RUA from zip/gzip/inline; TLS-RPT; idempotent message/attachment/report dedupe; raw report browser and downloads. |
 | **Analytics** | Compliance, sources, sender identities, ASN/PTR context, period changes, volume anomaly, coverage, reporter quality, TLS delivery, policy advisor and a read-only policy simulator. |
 | **Health** | Live DMARC (including RFC 9989 tree walk/PSD), SPF, DKIM rotation, MX, MTA-STS, TLS-RPT, DNSSEC, BIMI; transport STARTTLS/certificate/DANE probes; snapshot history and DNS diffs. |
-| **Alerts** | Nine rules over reports, snapshots and probes; SMTP/Telegram/Signal/webhook; dedupe, cooldown, resolution; per-domain threshold and cooldown overrides; delivery retry with backoff; weekly digest. |
+| **Alerts** | Nine rules over reports, snapshots and probes; SMTP or JMAP email submission, Telegram/Signal/webhook; dedupe, cooldown, resolution; per-domain threshold and cooldown overrides; delivery retry with backoff; weekly digest. |
 | **Distribution** | Signed read-only share links; CSV/JSON/raw export; sortable fleet comparison; domain tags/groups; saved fleet views. |
 | **Operations** | Scheduler and job history; local SQLite backup and verified restore; retention with raw archiving; known-sender expectations; append-only audit log. |
 | **Signal quality** | Every TLS-RPT policy domain attributed separately; RFC 9990 report warnings; DMARC/SPF/MTA-STS/TLS-RPT change history. |
@@ -25,8 +25,10 @@ optional, trigger-based or deliberately parked work.
 
 ## Recent releases
 
+- **v1.13 — JMAP email transport.** Alerts and the weekly digest can send through SMTP or
+  Stalwart JMAP `EmailSubmission`, using `ALERT_TO`/`DIGEST_TO` and `JMAP_FROM`.
 - **v1.12 — operator visibility.** Editable per-domain alert overrides, dedicated DNS diff view,
-  report-quality scores, delivery attempts/manual retry, digest controls, and an audit log
+  report-quality scores, delivery attempts/manual retry, digest controls and an audit log
   without MFA.
 - **v1.11 — saved views and signal quality.** Named fleet filter/sort presets, TLS policy
   attribution per policy domain, RFC 9990 report warnings, DNS change history.
@@ -39,7 +41,7 @@ optional, trigger-based or deliberately parked work.
 
 ## Current status
 
-- **Tests:** 115 backend tests, plus the frontend type/build check in CI.
+- **Tests:** 117 backend tests, plus the frontend type/build check in CI.
 - **Schema:** Alembic `0001` through `0013`; upgrades run automatically on start.
 - **Runtime:** one container, one SQLite database, no Redis/Celery, no telemetry.
 

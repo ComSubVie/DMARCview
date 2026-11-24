@@ -55,7 +55,7 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
   global policy. A weekly SMTP digest covers domains you do not open every day.
 - **Tells you when it changes.** Nine alert rules cover compliance drops, new senders, DKIM
   breaks, TLS failures, silent report gaps, volume spikes, policy drift and certificate expiry,
-  delivered over SMTP, Telegram, Signal (signal-cli) or a signed webhook.
+  delivered over SMTP or JMAP email submission, Telegram, Signal (signal-cli) or a signed webhook.
 - **Runs itself.** An in-process scheduler re-checks every few hours, evaluates alerts,
   reverse-resolves sending IPs, and reports every run in the UI. No cron, Redis or Celery.
 - **Multi-domain.** A fleet view plus a per-domain drill-down with a domain picker; free-form
@@ -262,6 +262,7 @@ All settings are environment variables (`.env` is loaded automatically).
 | `JMAP_USERNAME` / `JMAP_PASSWORD` | — | Basic-auth credentials. |
 | `JMAP_TOKEN` | — | Bearer token instead of basic auth. |
 | `JMAP_MAILBOX` | `DMARC` | Folder name to poll. |
+| `JMAP_FROM` | `SMTP_FROM` | Sender identity/address for JMAP email submission. |
 | `JMAP_POLL_SECONDS` | `300` | Poll interval (min 30). |
 | `INGEST_INITIAL_DAYS` | `90` | How far back the first sync looks. |
 | `DNS_NAMESERVERS` | system | Comma-separated resolvers for health checks. Use a validating resolver for DNSSEC. |
@@ -278,12 +279,13 @@ All settings are environment variables (`.env` is loaded automatically).
 | `ALERT_INTERVAL_MINUTES` | `60` | Alert evaluation cadence. |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Minimum gap between repeated episodes of one finding. |
 | `ALERT_BASE_URL` | — | Public URL used for links in notifications. |
+| `EMAIL_TRANSPORT` | `auto` | `auto` uses SMTP when configured, otherwise JMAP; `smtp`/`jmap` force one transport. |
 | `SMTP_HOST` / `SMTP_PORT` | — / `587` | SMTP relay for email alerts. |
 | `SMTP_SECURITY` | `starttls` | `starttls`, `ssl` or `none`. |
 | `SMTP_USERNAME` / `SMTP_PASSWORD` | — | Optional SMTP authentication. |
 | `SMTP_FROM` | — | Sender address for alerts. |
 | `ALERT_TO` | — | Comma-separated recipients. |
-| `DIGEST_ENABLED` | `false` | Send a weekly fleet email digest over SMTP. |
+| `DIGEST_ENABLED` | `false` | Send a weekly fleet email digest over the selected email transport. |
 | `DIGEST_TO` | `ALERT_TO` | Digest recipients when they differ from alert recipients. |
 | `DIGEST_DAYS` | `7` | Digest window and minimum interval between sends. |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | Telegram delivery. |
@@ -473,7 +475,7 @@ MFA and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (115 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (117 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -544,14 +546,20 @@ SQLite or backups:
 
 - **SMTP** (`SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USERNAME`, `SMTP_PASSWORD`,
   `SMTP_FROM`, `ALERT_TO`).
+- **JMAP email submission** (`JMAP_URL`, `JMAP_TOKEN` or basic credentials, `JMAP_FROM`,
+  `ALERT_TO`). The message is uploaded/imported as a draft and submitted with
+  `EmailSubmission/set`; Stalwart then uses its own SMTP submission pipeline.
 - **Telegram** (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
 - **Signal** (`SIGNAL_API_URL`, `SIGNAL_NUMBER`, `SIGNAL_RECIPIENTS`) through a
   [signal-cli-rest-api](https://github.com/bbernhard/signal-cli-rest-api) sidecar.
 - **Webhook** (`WEBHOOK_URL`, optional `WEBHOOK_SECRET`) with an
   `X-DMARCView-Signature: sha256=…` header.
 
-With no channel configured the incidents are still recorded and visible; the page explains
-which variables are missing. **Send test** per channel verifies the wiring.
+`EMAIL_TRANSPORT=auto` uses SMTP when it is fully configured and falls back to JMAP email
+otherwise. Set it to `jmap` to force JMAP even when both are configured. The same transport and
+`ALERT_TO`/`DIGEST_TO` logic applies to the weekly digest. With no channel configured the
+incidents are still recorded and visible; the page explains which variables are missing.
+**Send test** per channel verifies the wiring.
 
 ## Read-only sharing
 

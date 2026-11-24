@@ -20,6 +20,7 @@ from typing import Optional
 import httpx
 
 from ..config import Settings
+from ..ingest.jmap import JMAPClient, JMAPError
 
 
 @dataclass
@@ -48,9 +49,34 @@ def recipients(settings: Settings) -> list[str]:
     return _split(settings.alert_to)
 
 
+def jmap_configured(settings: Settings) -> bool:
+    return bool(settings.jmap_url and (settings.jmap_token or settings.jmap_username))
+
+
+def _email_kind(settings: Settings, requested: Optional[str] = None) -> Optional[str]:
+    if requested in {"smtp", "jmap"}:
+        return requested if is_configured(requested, settings) else None
+    transport = (settings.email_transport or "auto").lower()
+    if transport == "smtp":
+        return "smtp" if is_configured("smtp", settings) else None
+    if transport == "jmap":
+        return "jmap" if is_configured("jmap", settings) else None
+    if is_configured("smtp", settings):
+        return "smtp"
+    if is_configured("jmap", settings):
+        return "jmap"
+    return None
+
+
+def email_transport(settings: Settings) -> Optional[str]:
+    return _email_kind(settings)
+
+
 def is_configured(kind: str, settings: Settings) -> bool:
     if kind == "smtp":
         return bool(settings.smtp_host and (settings.smtp_from or settings.smtp_username) and recipients(settings))
+    if kind == "jmap":
+        return jmap_configured(settings) and bool(recipients(settings))
     if kind == "telegram":
         return bool(settings.telegram_bot_token and settings.telegram_chat_id)
     if kind == "signal":
@@ -68,6 +94,13 @@ def statuses(settings: Settings) -> list[dict]:
             "configured": is_configured("smtp", settings),
             "target": _mask(", ".join(recipients(settings))),
             "hint": "SMTP_HOST, SMTP_FROM, ALERT_TO",
+        },
+        {
+            "kind": "jmap",
+            "label": "Email (JMAP)",
+            "configured": is_configured("jmap", settings),
+            "target": _mask(settings.jmap_from or "account identity"),
+            "hint": "JMAP_URL, JMAP_TOKEN and JMAP_FROM",
         },
         {
             "kind": "telegram",
@@ -141,6 +174,59 @@ def _smtp_send(settings: Settings, subject: str, body: str) -> ChannelResult:
     return send_smtp(settings, subject, body)
 
 
+async def send_jmap(
+    settings: Settings,
+    subject: str,
+    body: str,
+    *,
+    html: Optional[str] = None,
+    to: Optional[list[str]] = None,
+) -> ChannelResult:
+    recipients_to = to or recipients(settings)
+    if not recipients_to:
+        return ChannelResult("jmap", False, "no recipients configured")
+    if not jmap_configured(settings):
+        return ChannelResult("jmap", False, "JMAP is not configured")
+    client = JMAPClient(
+        settings.jmap_url,
+        settings.jmap_username,
+        settings.jmap_password,
+        settings.jmap_token,
+    )
+    try:
+        await client.submit_message(
+            subject,
+            body,
+            recipients_to,
+            from_addr=settings.jmap_from,
+            html=html,
+        )
+        return ChannelResult("jmap", True)
+    except (JMAPError, OSError, ValueError) as exc:
+        return ChannelResult("jmap", False, f"{type(exc).__name__}: {exc}"[:400])
+
+
+async def send_email(
+    settings: Settings,
+    subject: str,
+    body: str,
+    *,
+    html: Optional[str] = None,
+    to: Optional[list[str]] = None,
+) -> ChannelResult:
+    kind = _email_kind(settings)
+    if kind == "smtp":
+        result = await asyncio.to_thread(send_smtp, settings, subject, body, html=html, to=to)
+        if not result.ok and settings.email_transport == "auto" and is_configured("jmap", settings):
+            jmap_result = await send_jmap(settings, subject, body, html=html, to=to)
+            if jmap_result.ok:
+                return jmap_result
+        return result
+    if kind == "jmap":
+        return await send_jmap(settings, subject, body, html=html, to=to)
+    return ChannelResult("email", False, "no email transport configured")
+
+
 async def _telegram_send(settings: Settings, subject: str, body: str) -> ChannelResult:
     url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
     try:
@@ -201,8 +287,14 @@ async def deliver(
     only: Optional[str] = None,
 ) -> list[ChannelResult]:
     tasks = []
-    if (only in (None, "smtp")) and is_configured("smtp", settings):
-        tasks.append(asyncio.to_thread(_smtp_send, settings, subject, body))
+    if only is None:
+        if _email_kind(settings) is not None:
+            tasks.append(send_email(settings, subject, body))
+    elif only in {"smtp", "jmap"}:
+        if only == "smtp" and is_configured("smtp", settings):
+            tasks.append(asyncio.to_thread(_smtp_send, settings, subject, body))
+        elif only == "jmap" and is_configured("jmap", settings):
+            tasks.append(send_jmap(settings, subject, body))
     if (only in (None, "telegram")) and is_configured("telegram", settings):
         tasks.append(_telegram_send(settings, subject, body))
     if (only in (None, "signal")) and is_configured("signal", settings):
