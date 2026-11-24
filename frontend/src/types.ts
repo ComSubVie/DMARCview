@@ -111,6 +111,83 @@ export interface AdviceOption {
   detail: string;
 }
 
+export interface SimulationSource {
+  ip: string;
+  header_from: string | null;
+  messages: number;
+  aligned: number;
+  aligned_pct: number;
+  failed: number;
+  current_action: string;
+  proposed_action: string;
+  current_severity: number;
+  proposed_severity: number;
+  newly_affected: number;
+  newly_blocked: number;
+  already_affected: number;
+  relaxed: number;
+}
+
+export interface PolicySimulation {
+  available: boolean;
+  domain: string;
+  range: { start: string; end: string; days: number };
+  message?: string;
+  current: {
+    p: string;
+    sp: string;
+    np: string;
+    testing: string;
+    label: string;
+  } | null;
+  proposed: {
+    p: string;
+    sp: string;
+    np: string;
+    testing: string;
+    label: string;
+  } | null;
+  totals: {
+    messages: number;
+    aligned: number;
+    failed: number;
+    newly_affected: number;
+    newly_blocked: number;
+    newly_quarantined: number;
+    already_affected: number;
+    relaxed: number;
+    unaffected: number;
+    sources: number;
+    affected_sources: number;
+  };
+  newly_affected_pct: number;
+  affected_pct: number;
+  sources: SimulationSource[];
+  verdict: { level: "good" | "warn" | "bad" | "info"; label: string; detail: string };
+  confidence: "low" | "medium" | "high";
+  warnings: string[];
+  caveats: string[];
+  generated_at: string;
+}
+
+export interface TimelineItem {
+  id: string;
+  ref_id?: number;
+  source: "annotation" | "alert" | "dns" | "identity" | "report_gap";
+  kind: string;
+  title: string;
+  body: string | null;
+  occurred_at: string | null;
+  created_at?: string | null;
+  editable: boolean;
+}
+
+export interface Timeline {
+  domain: string;
+  items: TimelineItem[];
+  annotation_count: number;
+}
+
 export interface Advice {
   status: string;
   label: string;

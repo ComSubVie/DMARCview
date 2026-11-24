@@ -42,6 +42,22 @@ class Domain(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class DomainAnnotation(SQLModel, table=True):
+    """A private operator note on a domain timeline."""
+
+    __tablename__ = "domain_annotations"
+    __table_args__ = (Index("ix_annotations_domain_occurred", "domain_id", "occurred_at"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    domain_id: int = Field(foreign_key="domains.id", index=True)
+    occurred_at: datetime = Field(default_factory=utcnow, index=True)
+    kind: str = Field(default="note", max_length=32)
+    title: str = Field(max_length=255)
+    body: Optional[str] = Field(default=None, sa_column=Column(Text))
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class Report(SQLModel, table=True):
     """One DMARC aggregate report (one ``<feedback>`` document)."""
 

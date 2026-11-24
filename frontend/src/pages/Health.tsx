@@ -135,28 +135,30 @@ function DmarcbisCard({ result, domain }: { result: HealthCheckResult; domain: s
         </div>
         <Badge tone={meta.tone}>{meta.label}</Badge>
       </div>
-      <div className="dmarcbis-grid">
-        {items.map((item) => (
-          <div className="dmarcbis-item" key={item.label}>
-            <div className="dmarcbis-item-head">
-              <span className="dmarcbis-label">{item.label}</span>
-              <Badge tone={item.tone}>{item.value}</Badge>
+      <div className="card-body">
+        <div className="dmarcbis-grid">
+          {items.map((item) => (
+            <div className="dmarcbis-item" key={item.label}>
+              <div className="dmarcbis-item-head">
+                <span className="dmarcbis-label">{item.label}</span>
+                <Badge tone={item.tone}>{item.value}</Badge>
+              </div>
+              <p className="tiny muted">{item.detail}</p>
             </div>
-            <p className="tiny muted">{item.detail}</p>
-          </div>
-        ))}
+          ))}
+        </div>
+        <p className="tiny muted dmarcbis-foot">
+          The health check is read-only. See{" "}
+          <a href="https://www.rfc-editor.org/rfc/rfc9989" target="_blank" rel="noreferrer">
+            RFC 9989
+          </a>{" "}
+          for the policy tags and{" "}
+          <a href="https://www.rfc-editor.org/rfc/rfc9990" target="_blank" rel="noreferrer">
+            RFC 9990
+          </a>{" "}
+          for reporting.
+        </p>
       </div>
-      <p className="tiny muted dmarcbis-foot">
-        The health check is read-only. See{" "}
-        <a href="https://www.rfc-editor.org/rfc/rfc9989" target="_blank" rel="noreferrer">
-          RFC 9989
-        </a>{" "}
-        for the policy tags and{" "}
-        <a href="https://www.rfc-editor.org/rfc/rfc9990" target="_blank" rel="noreferrer">
-          RFC 9990
-        </a>{" "}
-        for reporting.
-      </p>
     </section>
   );
 }

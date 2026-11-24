@@ -1,6 +1,8 @@
 import { ArrowRight, Sparkles } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Advice, Policy, PolicyOverviewItem } from "../types";
+import { SimulationDrawer } from "./SimulationDrawer";
 import { Badge, CopyButton } from "./ui";
 
 export function PolicyCard({
@@ -9,13 +11,16 @@ export function PolicyCard({
   overview = [],
   fleet = false,
   readonly = false,
+  domain,
 }: {
   policy: Policy | null;
   advice: Advice;
   overview?: PolicyOverviewItem[];
   fleet?: boolean;
   readonly?: boolean;
+  domain?: string;
 }) {
+  const [simulating, setSimulating] = useState(false);
   if (fleet) {
     return (
       <section className="card policy-card">
@@ -122,13 +127,21 @@ export function PolicyCard({
               Review reports
               <ArrowRight size={15} />
             </Link>
+            {domain && domain !== "all" ? (
+              <button className="btn ghost lg" type="button" onClick={() => setSimulating(true)}>
+                <Sparkles size={14} />
+                Simulate change
+              </button>
+            ) : null}
             <Link className="link" to="/ingest">
-              <Sparkles size={13} />
               See raw reports
             </Link>
           </div>
         ) : null}
       </div>
+      {simulating && domain ? (
+        <SimulationDrawer domain={domain} onClose={() => setSimulating(false)} />
+      ) : null}
     </section>
   );
 }

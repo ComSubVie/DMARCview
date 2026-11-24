@@ -1,18 +1,19 @@
 # Roadmap
 
-_Rev 12 · 24 November 2026 · DMARCbis delivered (v1.8)_
+_Rev 14 · 24 November 2026 · decision support delivered (v1.9)_
 
 v1 answered **"what happened?"**; v1.1 added **"is my configuration correct?"**; v1.2 added
 **"tell me when it changes"**; v1.4 completed **why it changed**; v1.5 added sharing; v1.6
 added export/fleet; v1.7 added retention; v1.8 delivers DMARCbis: RFC 9989 tree-walk/PSD
 discovery, a readiness panel, external reporting authorization and effective-policy coverage.
-Next: optional RUF and platform work.
+v1.9 adds decision support: a read-only policy simulator and a private domain timeline. Next:
+operational confidence, then signal quality. RUF and platform work remain optional.
 
 ## Delivered so far
 
 | Area | What shipped |
 | --- | --- |
-| **Migrations** | Alembic `0001` baseline, `0002` health/probes/jobs/settings, `0003` alerts, `0004` ASN metadata. Existing databases upgrade in place on start; `python -m app.cli migrate`. |
+| **Migrations** | Alembic `0001` baseline through `0007` annotations (health/probes/jobs, alerts, ASN, share links/mute, DMARCbis, annotations). Existing databases upgrade in place on start; `python -m app.cli migrate`. |
 | **Scheduler** | In-process runner with overlap guards, jitter, initial delay and `job_runs`. Jobs: health checks, transport probes, PTR enrichment, alert evaluation. No Redis/Celery. |
 | **Domain settings** | Per-domain DKIM selectors, extra probe targets, expected report interval, check toggle. |
 | **Domain health** | DMARC (incl. drift vs reports), SPF (10-lookup/2-void), DKIM, MX, MTA-STS, TLS-RPT, DNSSEC, BIMI; snapshot history and Health page. |
@@ -24,18 +25,22 @@ Next: optional RUF and platform work.
 | **Analytics foundation** | Sender identities grouped by envelope/header domain + external DKIM domain, with ASN/PTR context; DB-IP ASN Lite fetched by default and backfilled into `ip_meta`; "what changed" chips and new-identity list; full identity drawer. |
 | **Anomaly score** | Robust z-score (MAD, standard-deviation fallback when MAD is 0) of the latest reporting day against the trailing 28-day baseline; shown on the volume card when \|z\| ≥ 2 and used by the `volume_spike` alert rule (`min_z`). |
 | **URL filters** | Domain and period persist in `?domain=&days=`, so dashboard views are bookmarkable and survive reloads. |
-| **Coverage** | Reporter coverage (silent reporters vs the previous period), other header-from domains checked against the effective `sp=` policy, and the `pct=` ramp timeline. |
+| **Coverage** | Reporter coverage (silent reporters vs the previous period), header-from domains checked against the effective DMARCbis policy, and the legacy `pct=` timeline. |
 | **Share links** | HMAC-signed, expiring, revocable read-only links; only token hashes stored; public dashboard/TLS view with sources optional and envelope identities stripped; usage tracking and revoke. |
 | **Quick wins** | Print stylesheet, editable domain display name/notes, report search persisted in the URL, and per-domain mute for scheduled health checks/probes (now actually honoured by the scheduler). |
 | **Export** | Reports CSV/JSON, sources CSV and TLS CSV with current filters; capped `raw.zip` (500 reports / 200 MB) and export actions in the UI. |
 | **Fleet comparison** | Sortable domain table with volume, alignment, failing sources, last report, TLS success, policy, health and a 14-day sparkline; click-through to the domain. |
 | **Retention** | Opt-in `RETENTION_DAYS`; raw XML/JSON archived to `data/archive/YYYY/MM/` before deleting reports and child rows; dry-run CLI and daily scheduler job. |
 | **DMARCbis** | RFC 9989 parent/PSD tree walk when a domain has no record of its own; `np=`, `t=`, `psd=` and external `rua/ruf` authorization; report fields `np`, `testing`, `discovery_method`; readiness panel; effective-policy subdomain coverage; deprecation notes for `pct/rf/ri`. Existing author-domain logic is unchanged. |
-| **Tests** | 96 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage, share links, domain profile, check mute, GeoIP backfill, export, fleet, retention, DMARCbis tree walk/PSD, external reporting authorization. |
+| **Decision support** | Read-only policy simulator over stored reports (p/sp/np/t, per-source impact, confidence/verdict); private domain timeline combining annotations with alerts, DNS changes, new identities and report gaps. |
+| **Tests** | 101 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage, share links, domain profile, check mute, GeoIP backfill, export, fleet, retention, DMARCbis tree walk/PSD, external reporting authorization, policy simulation, timeline annotations. |
 
 Known limits: DNSSEC relies on the resolver's AD flag (no chain validation); BIMI checks
-presence only; probes need outbound port 25; alert rules are global (no per-domain overrides
-or mute yet) and failed deliveries are recorded but not retried.
+presence only; probes need outbound port 25; alert rules are global (no per-domain overrides)
+and failed deliveries are not retried; there is no restore path or off-box backup; MFA is
+absent; TLS-RPT reports are attributed to their first policy domain; RFC 9990 `<error>`
+elements are not surfaced; RUF is not ingested. Timeline auto-events are derived from the last
+20 health snapshots and the last 180 days.
 
 ## Decisions locked in
 
@@ -46,16 +51,27 @@ or mute yet) and failed deliveries are recorded but not retried.
 | 3 | **No off-box backup target yet**; retention is opt-in | Keep-forever default; when enabled, raw payloads are archived locally before pruning. Off-box backup is still open. |
 | 4 | **Single admin**; read-only **share links without authentication** | Delivered: signed, revocable tokens at `/s/<token>`, default 7 days, 90-day cap. No OIDC/SSO. |
 | 5 | **Analytics before sharing** (Rev 5, 24 Nov 2026) | No technical dependency; for a single-admin deployment, explaining changes is worth more than distributing them. Share links can move forward at any time if external access becomes necessary. |
+| 6 | **Simulation and recommendations are read-only** | The policy simulator and advisor never write DNS or change a domain's configured policy; they project impact from stored reports. |
+| 7 | **Restore must be recoverable** | Any restore takes a safety snapshot first, verifies `PRAGMA integrity_check`, and requires `--yes`; archive restore is explicit. |
+| 8 | **MFA is TOTP first; the single-admin model stays** | Add TOTP plus recovery codes and an audit log. WebAuthn/OIDC remain parked unless the admin model changes. |
 
 ## Remaining sequence
 
 | Phase | Theme | Effort | Status |
 | --- | --- | --- | --- |
-| **4** | Forensic (RUF) reports | 3–4 d | next / optional |
+| **7** | Decision support: policy simulator, domain timeline | 3–5 d | **delivered** |
+| **8** | Operational confidence: restore, digest, trust, groups | 7–13 d | **next** |
+| **9** | Signal quality: TLS policy attribution, report errors, DNS history | 2–4 d | after 8 |
+| **4** | Forensic (RUF) reports | 3–4 d | optional |
 | **5** | Platform: Postgres, IMAP, tokens, metrics | 8–10 d | trigger-based |
 
-≈ **11–14 focused engineer-days** remaining, tests included. RUF and platform work are both
-optional and can be reordered freely.
+≈ **9–17 focused engineer-days** for Phases 8–9, tests included. The range reflects how much
+of the trust/UX bundle is taken in one pass. RUF adds 3–4 days and platform work 8–10, both
+optional and reorderable.
+
+Phase 8 adds operational recovery and trust, which are more valuable now that policy changes
+can be simulated. Phase 9 fixes attribution and data-quality gaps that would otherwise make
+later analytics look more precise than they are.
 
 ---
 
@@ -123,29 +139,6 @@ dedupe keys are retained, and archives must be included in any off-box backup.
 
 ---
 
-## Phase 4 — Forensic / RUF reports (3–4 days)
-
-Optional; most receivers disable RUF.
-
-Parse ARF (`multipart/report; report-type=feedback-report`): `Feedback-Type`,
-`Authentication-Results`, `Original-Mail-From`, `Source-IP`, `Reported-Domain`. Headers and
-failed auth results only — never bodies; redact subject/recipient by default; per-domain
-opt-in, daily row cap, shorter retention. Link forensic failures to the source IP row.
-
----
-
-## Phase 5 — Platform (8–10 days)
-
-| Item | Effort | Trigger |
-| --- | --- | --- |
-| PostgreSQL | 2–3 d | >10 M source records, multiple instances, external BI; audit `func.date()`, `ILIKE`, JSON operators; SQLite+Postgres CI matrix |
-| IMAP transport | 3 d | `imaplib` behind the `JMAPClient` interface: `UIDVALIDITY`, `IDLE` fallback, `BODY.PEEK[]`, handled flag |
-| API tokens, metrics, webhook | 2–3 d | read-only bearer tokens (`dvc_…`, hashed, per-domain), Prometheus `/api/metrics`, optional new-report webhook |
-
-SSO stays parked unless the single-admin decision changes.
-
----
-
 ## Phase 6b — DMARCbis readiness
 
 The RFCs are final: RFC 9989 (protocol), 9990 (aggregate reporting), 9991 (failure reporting).
@@ -172,11 +165,86 @@ The RFCs are final: RFC 9989 (protocol), 9990 (aggregate reporting), 9991 (failu
 
 ---
 
+## Phase 7 — Decision support (delivered)
+
+The goal was to turn observed data into decisions before changing DNS. The simulator is
+read-only; the timeline adds private annotations and derives automatic events. Both reuse the
+existing report/source data.
+
+### 7.1 Policy change simulator (delivered)
+
+- Inputs: domain, 30/90-day window, proposed `p`, `sp`, `np`, `t`; `pct=` remains visible only
+  as a legacy value with a warning.
+- Per source/header-from: current messages and alignment, projected quarantine/reject volume,
+  and the senders most likely to break.
+- A “safe to tighten” summary based on volume, source-level alignment and how long the source
+  has been stable. Clearly label it as a projection, not a receiver simulation.
+- UI entry point from the policy card; the scenario form stays local to the drawer.
+- No new tables or scheduled work; calculations are on demand. Implemented in
+  `app/simulation.py` with per-source impact, foreign-header exclusion, confidence and a
+  verdict. Tests use the existing report fixtures and assert that no writes occur.
+
+### 7.2 Domain timeline and annotations (delivered)
+
+- New `domain_annotations` table (migration): domain, occurred-at, kind, title, body, created.
+- API and UI to add/edit/delete notes such as “ESP migration”, “DNS change”, “provider outage”.
+- Automatic timeline events from: alert events, DMARC/SPF/MTA-STS snapshot changes, new
+  identities, report gaps and policy drift.
+- One chronological view per domain, with add/edit/delete for annotations and a show-all toggle.
+  Implemented in `app/timeline.py` with migration `0007`. Annotations stay private; they are
+  never included in share links.
+
+## Phase 8 — Operational confidence (7–13 days)
+
+| Item | Scope | Effort |
+| --- | --- | --- |
+| **8.1 Restore** | `app.cli restore <snapshot>` with a pre-restore safety snapshot, integrity check, `--yes`, optional archive restore; docs and tests. Off-box sync remains separate. | 1–2 d |
+| **8.2 Weekly digest** | Scheduler job using the existing SMTP channel: per-domain or fleet summary, top failing sources, policy/TLS changes and a dashboard/share link; HTML + text; no duplicate of alert delivery. | 1–2 d |
+| **8.3 Reporter scorecard** | Extend coverage with per-reporter expected cadence, days present, lateness, duplicate/report-id conflicts and a quality badge. | 1 d |
+| **8.4 Source expectations** | Allowlist CIDR/IP/ASN/identity or domain tags; suppress `new_source` for known senders; show “known” context. Scoped per domain. | 1–2 d |
+| **8.5 Alert follow-ups** | Per-domain rule thresholds/mute, channel routing and retry with backoff; keep dedupe semantics and resolution notices. | 1–2 d |
+| **8.6 MFA + audit log** | TOTP and recovery codes, optional enforcement, session invalidation; audit login, settings, share, mute and profile changes. WebAuthn stays parked. | 1–2 d |
+| **8.7 Saved views and domain groups** | Domain groups/tags, saved filter presets for the dashboard/fleet, group-scoped share links. | 1–2 d |
+
+## Phase 9 — Signal quality (2–4 days)
+
+| Item | Scope | Effort |
+| --- | --- | --- |
+| **9.1 TLS-RPT policy attribution** | Surface every `policies[]` entry instead of attributing a report to its first policy domain; filters and TLS summaries use policy-level rows. `TlsPolicy` already exists. | 1–2 d |
+| **9.2 Report quality** | Parse RFC 9990 `<error>` elements and reporter failures, show them on the report/detail and in a data-quality count; do not treat them as DMARC failures. | 0.5–1 d |
+| **9.3 DNS change history** | Diff health-snapshot evidence for DMARC/SPF/MTA-STS/TLS-RPT records and show “changed from … to …”; link to domain timeline events. | 0.5–1 d |
+
+## Phase 4 — Forensic / RUF reports (3–4 days, optional)
+
+Optional; most receivers disable RUF.
+
+Parse ARF (`multipart/report; report-type=feedback-report`): `Feedback-Type`,
+`Authentication-Results`, `Original-Mail-From`, `Source-IP`, `Reported-Domain`. Headers and
+failed auth results only — never bodies; redact subject/recipient by default; per-domain
+opt-in, daily row cap, shorter retention. Link forensic failures to the source IP row.
+
+---
+
+## Phase 5 — Platform (8–10 days)
+
+| Item | Effort | Trigger |
+| --- | --- | --- |
+| PostgreSQL | 2–3 d | >10 M source records, multiple instances, external BI; audit `func.date()`, `ILIKE`, JSON operators; SQLite+Postgres CI matrix |
+| IMAP transport | 3 d | `imaplib` behind the `JMAPClient` interface: `UIDVALIDITY`, `IDLE` fallback, `BODY.PEEK[]`, handled flag |
+| API tokens, metrics, webhook | 2–3 d | read-only bearer tokens (`dvc_…`, hashed, per-domain), Prometheus `/api/metrics`, optional new-report webhook |
+
+SSO stays parked unless the single-admin decision changes.
+
+---
+
 ## Quick wins
 
-All planned quick wins are shipped: report-gap banner, copy-to-clipboard, URL-backed
-domain/period/report-search filters, print stylesheet, editable domain profiles, and
-per-domain scheduled-check mute.
+Shipped: report-gap banner, copy-to-clipboard, URL-backed domain/period/report-search filters,
+print stylesheet, editable domain profiles, and per-domain scheduled-check mute.
+
+Shipped in v1.9: read-only policy simulator and private domain timeline (with annotations).
+Scheduled as part of the phases above: weekly digest, reporter scorecard, source allowlisting,
+DNS change history, saved fleet views and domain groups.
 
 ---
 
@@ -194,6 +262,5 @@ per-domain scheduled-check mute.
 ## Still open
 
 1. **Off-box backup:** when a target appears, sync the SQLite snapshot and `data/archive/`.
-2. **Alert follow-ups:** per-domain overrides and delivery retry after real-world use.
-3. **Share-link rate limit:** currently per-process memory; revisit if multiple workers/replicas are added.
-4. **RUF/PII policy:** decide whether forensic reports are worth the extra handling before Phase 4.
+2. **Share-link rate limit:** currently per-process memory; revisit if multiple workers/replicas are added.
+3. **RUF/PII policy:** decide whether forensic reports are worth the extra handling before Phase 4.

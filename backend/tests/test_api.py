@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.models import Domain, Report, SourceRecord
+from app.models import Domain, DomainHealthSnapshot, Report, SourceRecord
 
 from .conftest import sample
 
@@ -35,6 +35,8 @@ def test_requires_authentication(client: TestClient):
     assert client.get("/api/dashboard").status_code == 401
     assert client.get("/api/reports").status_code == 401
     assert client.get("/api/domains").status_code == 401
+    assert client.get("/api/domains/tgm.rocks/simulation").status_code == 401
+    assert client.get("/api/domains/tgm.rocks/timeline").status_code == 401
 
 
 def test_login_and_session(client: TestClient):
@@ -281,3 +283,132 @@ def test_duplicate_upload(auth_client: TestClient):
     assert again["reports"] == 0
     assert again["tls_reports"] == 0
     assert again["duplicates"] == 6  # 5 reports + the ignored newsletter
+
+
+def test_policy_simulation_is_read_only(auth_client: TestClient):
+    upload_all(auth_client)
+    before = auth_client.get("/api/domains/tgm.rocks/timeline").json()["items"]
+    result = auth_client.get(
+        "/api/domains/tgm.rocks/simulation",
+        params={"days": 30, "p": "reject", "sp": "reject", "t": "n"},
+    )
+    assert result.status_code == 200, result.text
+    data = result.json()
+    assert data["available"] is True
+    assert data["totals"]["messages"] == 17
+    assert data["totals"]["failed"] == 6
+    assert data["totals"]["newly_affected"] == 0
+    assert data["current"]["p"] == "reject"
+    assert data["proposed"]["p"] == "reject"
+    assert data["sources"]
+    # Simulation must not create timeline annotations or write a policy change.
+    after = auth_client.get("/api/domains/tgm.rocks/timeline").json()["items"]
+    assert before == after
+
+
+def test_policy_simulation_for_monitoring_domain(auth_client: TestClient):
+    upload_all(auth_client)
+    result = auth_client.get(
+        "/api/domains/aeroclub.example/simulation",
+        params={"days": 30, "p": "reject", "sp": "reject", "t": "n"},
+    )
+    assert result.status_code == 200, result.text
+    data = result.json()
+    assert data["current"]["p"] == "none"
+    assert data["proposed"]["p"] == "reject"
+    assert data["totals"]["newly_affected"] > 0
+    assert data["verdict"]["label"]
+
+
+def test_domain_annotations_are_private_and_crud(auth_client: TestClient):
+    upload_all(auth_client)
+    created = auth_client.post(
+        "/api/domains/tgm.rocks/annotations",
+        json={"kind": "esp", "title": "ESP migration", "body": "Moved to a new relay."},
+    )
+    assert created.status_code == 201, created.text
+    annotation = created.json()
+    assert annotation["kind"] == "esp"
+
+    timeline = auth_client.get("/api/domains/tgm.rocks/timeline").json()
+    item = next(entry for entry in timeline["items"] if entry["id"] == f"annotation:{annotation['id']}")
+    assert item["title"] == "ESP migration"
+    assert item["editable"] is True
+
+    updated = auth_client.put(
+        f"/api/annotations/{annotation['id']}",
+        json={"title": "ESP migration complete", "body": "Checked."},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["title"] == "ESP migration complete"
+
+    deleted = auth_client.delete(f"/api/annotations/{annotation['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json() == {"ok": True}
+    after = auth_client.get("/api/domains/tgm.rocks/timeline").json()
+    assert all(entry["id"] != f"annotation:{annotation['id']}" for entry in after["items"])
+
+
+def test_annotation_rejects_unknown_kind(auth_client: TestClient):
+    upload_all(auth_client)
+    response = auth_client.post(
+        "/api/domains/tgm.rocks/annotations",
+        json={"kind": "unknown", "title": "Nope"},
+    )
+    assert response.status_code == 422
+
+
+def test_timeline_includes_health_snapshot_changes(auth_client: TestClient, session: Session):
+    upload_all(auth_client)
+    domain = session.exec(select(Domain).where(Domain.name == "tgm.rocks")).one()
+    first = DomainHealthSnapshot(
+        domain_id=domain.id,
+        overall="pass",
+        score=1.0,
+        core_passed=4,
+        core_total=4,
+        results=[
+            {
+                "key": "dmarc",
+                "label": "DMARC",
+                "status": "pass",
+                "summary": "p=none",
+                "details": [],
+                "remediation": None,
+                "core": True,
+                "evidence": {"record": "v=DMARC1; p=none"},
+                "duration_ms": 1,
+            }
+        ],
+    )
+    second = DomainHealthSnapshot(
+        domain_id=domain.id,
+        overall="pass",
+        score=1.0,
+        core_passed=4,
+        core_total=4,
+        results=[
+            {
+                "key": "dmarc",
+                "label": "DMARC",
+                "status": "pass",
+                "summary": "p=reject",
+                "details": [],
+                "remediation": None,
+                "core": True,
+                "evidence": {"record": "v=DMARC1; p=reject"},
+                "duration_ms": 1,
+            }
+        ],
+    )
+    session.add(first)
+    session.commit()
+    session.refresh(first)
+    session.add(second)
+    session.commit()
+    timeline = auth_client.get("/api/domains/tgm.rocks/timeline").json()
+    changed = next(item for item in timeline["items"] if item["title"] == "DMARC record changed")
+    assert changed["source"] == "dns"
+    assert changed["editable"] is False
+    assert "p=none" in changed["body"]
+    assert "p=reject" in changed["body"]

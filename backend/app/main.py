@@ -20,6 +20,8 @@ from .config import get_settings
 from .db import get_engine, init_db
 from .routers import api as api_router
 from .routers import auth as auth_router
+from .routers import simulation as simulation_router
+from .routers import timeline as timeline_router
 from .routers import alerts as alerts_router
 from .routers import health as health_router
 from .routers import export as export_router
@@ -113,6 +115,8 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router.router)
     app.include_router(api_router.router)
+    app.include_router(simulation_router.router)
+    app.include_router(timeline_router.router)
     app.include_router(ingest_router.router)
     app.include_router(health_router.router)
     app.include_router(export_router.router)

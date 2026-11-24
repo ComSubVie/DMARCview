@@ -26,8 +26,14 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
     identity, with messages, alignment, sources and network context.
   - Period-over-period deltas ("what changed"), new identities, and a volume anomaly score
     against the trailing baseline.
-  - Coverage: silent reporters, other header-from domains vs `sp=`, and the `pct` ramp.
+  - Coverage: silent reporters, other header-from domains against the effective DMARCbis
+    policy, and the legacy `pct` timeline.
   - Top countries, mailbox providers, plain-English summary, and a policy recommendation.
+- **Simulate before tightening.** Project a proposed `p=`/`sp=`/`np=`/`t=` policy over stored
+  reports: which sources would be newly quarantined or rejected, what stays the same, and a
+  confidence-labelled risk verdict — read-only, with no DNS writes.
+- **Domain timeline.** One chronology of alerts, DNS changes, new identities, report gaps and
+  private operator notes, so a change can be explained after the fact.
 - **TLS delivery.** Session success rate per MX host, failure reasons
   (`certificate-expired`, `starttls-not-supported`, …) and the reporters behind them.
 - **Checks your configuration, not just your reports.** Live DNS checks for DMARC, SPF (with the
@@ -410,9 +416,11 @@ Everything below requires the session cookie (obtained via `POST /api/auth/login
 
 v1.2 added alerting over SMTP, Telegram, Signal and webhooks; v1.3 added sender identities
 and period-over-period changes; v1.4 completed analytics; v1.5 added sharing; v1.6 added
-export/fleet; v1.7 added retention; v1.8 extends DMARC checks with RFC 9989 tree-walk/PSD
-policy discovery. Next: the remaining DMARCbis readiness UI, RUF or platform work. Sequencing, effort estimates and the
-decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
+export/fleet; v1.7 added retention; v1.8 delivered RFC 9989 tree-walk/PSD policy discovery,
+a DMARCbis readiness panel, external report authorization and effective-policy coverage; v1.9
+adds the read-only policy simulator and the private domain timeline. Next: operational
+recovery, digests and trust work in Phase 8. RUF and platform work remain optional. Sequencing
+and effort estimates live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
 
@@ -420,7 +428,7 @@ decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (96 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (101 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build

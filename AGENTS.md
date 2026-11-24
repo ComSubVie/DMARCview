@@ -54,12 +54,14 @@ docker build -t dmarcview .
 | `backend/app/alerts/` | Rule specs and evaluators, notification channels, evaluation/dedupe service |
 | `backend/app/health/` | DNS/HTTP clients, checks, DKIM selector discovery, TLS probes, engine, persistence |
 | `backend/app/analytics.py` | Read-side aggregation for the dashboard, reports and TLS pages |
-| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `ingest`, `health`, `alerts`, `share`, `export` |
+| `backend/app/simulation.py` | Read-only policy projection over stored reports |
+| `backend/app/timeline.py` | Private annotations plus derived domain timeline events |
+| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `simulation`, `timeline`, `ingest`, `health`, `alerts`, `share`, `export` |
 | `backend/app/jobs.py` | In-process scheduler (health checks, probes, PTR enrichment, alert evaluation) |
 | `backend/app/share.py` | Share-token signing, public payload shaping, storage helpers |
 | `backend/app/retention.py` | Raw archiving and opt-in report pruning |
 | `backend/app/models.py` | SQLModel schema — the source of truth for Alembic |
-| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute, `0006` DMARCbis fields) |
+| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute, `0006` DMARCbis fields, `0007` annotations) |
 | `frontend/src/` | `pages/`, `components/`, `state.tsx`, `api.ts`, `types.ts`, `styles.css` |
 | `samples/` | Hand-written CRLF `.eml` fixtures used by the test suite |
 | `docs/` | Roadmap and screenshots |
@@ -97,6 +99,14 @@ Checks receive injected `dns`/`http` clients; tests must use fakes, never the ne
 
 **TLS probes verify certificates via certifi** (interpreter CA stores are often stale). They
 never authenticate, never send mail, and only connect to MX hosts plus configured targets.
+
+**Policy simulation is read-only.** `app/simulation.py` projects a proposed policy from stored
+reports; it must never write DNS, reports or policy state. Foreign header-from rows are excluded
+from impact, and the comparison baseline is the latest report (not live DNS).
+
+**Timeline annotations are private.** `domain_annotations` is admin-only and must never appear
+in share payloads. Derived timeline events are computed from snapshots/alerts/identities; they
+are not a second source of truth.
 
 **External rua=/ruf= destinations require _report._dmarc authorization.** The DMARC check
 queries `_report._dmarc.<destination>` for destinations outside the policy domain and reports
@@ -183,8 +193,9 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 ## Roadmap
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
-the user asks for them. Export, fleet comparison, retention and DMARCbis are delivered; the
-remaining RUF and platform slices are optional/trigger-based.
+the user asks for them. Export, fleet comparison, retention, DMARCbis and decision support are
+delivered; Phase 8 (restore, digest, trust, groups) is the next product slice. RUF and platform
+work stay optional/trigger-based.
 
 ## Security expectations
 

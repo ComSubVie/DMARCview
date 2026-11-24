@@ -69,6 +69,35 @@ export const api = {
   meta: () => request<Meta>("/meta"),
   dashboard: (domain: string, days: number) =>
     request<Dashboard>(`/dashboard${query({ domain, days })}`),
+  simulatePolicy: (
+    domain: string,
+    params: { days?: number; p?: string; sp?: string; np?: string; t?: string },
+  ) =>
+    request<import("./types").PolicySimulation>(
+      `/domains/${encodeURIComponent(domain)}/simulation${query(params)}`,
+    ),
+  timeline: (domain: string, limit = 50) =>
+    request<import("./types").Timeline>(
+      `/domains/${encodeURIComponent(domain)}/timeline${query({ limit })}`,
+    ),
+  createAnnotation: (
+    domain: string,
+    payload: { kind: string; title: string; body?: string | null; occurred_at?: string | null },
+  ) =>
+    request<import("./types").TimelineItem>(
+      `/domains/${encodeURIComponent(domain)}/annotations`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+  updateAnnotation: (
+    id: number,
+    payload: { kind?: string; title?: string; body?: string | null; occurred_at?: string | null },
+  ) =>
+    request<import("./types").TimelineItem>(`/annotations/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+  deleteAnnotation: (id: number) =>
+    request<{ ok: boolean }>(`/annotations/${id}`, { method: "DELETE" }),
   reports: (params: {
     domain?: string;
     page?: number;

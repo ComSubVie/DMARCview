@@ -5,6 +5,7 @@ import { api } from "../api";
 import { CountriesCard } from "../components/CountriesCard";
 import { HealthCard } from "../components/HealthCard";
 import { CoverageCard } from "../components/CoverageCard";
+import { TimelineCard } from "../components/TimelineCard";
 import { FleetTable } from "../components/FleetTable";
 import { IdentitiesCard } from "../components/IdentitiesCard";
 import { ProbesCard } from "../components/ProbesCard";
@@ -276,12 +277,14 @@ export function DashboardPage() {
                 advice={dashboard.advice}
                 overview={dashboard.policy_overview}
                 fleet={dashboard.domain === null}
+                domain={domain}
               />
             </div>
           </div>
 
           <IdentitiesCard identities={dashboard.identities} />
           <CoverageCard coverage={dashboard.coverage_detail} allDomains={domain === "all"} />
+          <TimelineCard domain={domain} />
         </>
       )}
     </div>
