@@ -234,6 +234,21 @@ def test_domain_profile(auth_client: TestClient):
     assert entry["display_name"] == "TGM Rocks"
 
 
+def test_dashboard_fleet(auth_client: TestClient):
+    upload_all(auth_client)
+    data = auth_client.get("/api/dashboard").json()
+    fleet = data["fleet"]
+    assert len(fleet) >= 2
+    tgm = next(item for item in fleet if item["domain"] == "tgm.rocks")
+    assert tgm["messages"] >= 11
+    assert 0 <= tgm["aligned_pct"] <= 100
+    assert len(tgm["sparkline"]) == 14
+    assert "tls_pct" in tgm and "health" in tgm
+
+    single = auth_client.get("/api/dashboard?domain=tgm.rocks").json()
+    assert single["fleet"] == []
+
+
 def test_dashboard_coverage(auth_client: TestClient):
     upload_all(auth_client)
     data = auth_client.get("/api/dashboard?domain=tgm.rocks").json()

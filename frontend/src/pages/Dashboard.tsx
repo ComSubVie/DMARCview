@@ -5,6 +5,7 @@ import { api } from "../api";
 import { CountriesCard } from "../components/CountriesCard";
 import { HealthCard } from "../components/HealthCard";
 import { CoverageCard } from "../components/CoverageCard";
+import { FleetTable } from "../components/FleetTable";
 import { IdentitiesCard } from "../components/IdentitiesCard";
 import { ProbesCard } from "../components/ProbesCard";
 import { KpiCard } from "../components/KpiCard";
@@ -95,6 +96,9 @@ export function DashboardPage() {
     dashboard.coverage.days > 0
       ? (dashboard.coverage.days_with_reports / dashboard.coverage.days) * 100
       : 0;
+  const exportQuery = new URLSearchParams({ days: String(dashboard.range.days) });
+  if (domain !== "all") exportQuery.set("domain", domain);
+  const sourcesExport = `/api/export/sources.csv?${exportQuery.toString()}`;
   const volumePct =
     dashboard.volume.alert_threshold > 0
       ? Math.min(100, (dashboard.volume.month_messages / dashboard.volume.alert_threshold) * 100)
@@ -250,6 +254,8 @@ export function DashboardPage() {
             />
           </div>
 
+          {dashboard.fleet.length > 0 ? <FleetTable items={dashboard.fleet} /> : null}
+
           <div className="grid cols-8-4">
             <VolumeChart daily={dashboard.daily} days={dashboard.range.days} anomaly={dashboard.anomaly} />
             <SummaryCard
@@ -261,7 +267,7 @@ export function DashboardPage() {
           </div>
 
           <div className="grid cols-8-4 grid-bottom">
-            <SourcesCard sources={dashboard.sources} />
+            <SourcesCard sources={dashboard.sources} exportHref={sourcesExport} />
             <div className="stack right">
               <CountriesCard countries={dashboard.countries} />
               <TlsTeaser tls={dashboard.tls} />

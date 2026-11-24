@@ -147,6 +147,30 @@ export interface TlsSummary {
   mx_hosts: number;
 }
 
+export interface FleetPoint {
+  date: string;
+  total: number;
+  aligned: number;
+}
+
+export interface FleetItem {
+  domain: string;
+  display_name: string | null;
+  messages: number;
+  aligned: number;
+  aligned_pct: number;
+  failing_sources: number;
+  sources: number;
+  last_report: string | null;
+  tls_pct: number | null;
+  policy_p: string | null;
+  policy_sp: string | null;
+  health: string | null;
+  health_score: number | null;
+  health_checked_at: string | null;
+  sparkline: FleetPoint[];
+}
+
 export interface Dashboard {
   domain: DomainRef | null;
   range: { start: string; end: string; days: number; label: string };
@@ -167,6 +191,7 @@ export interface Dashboard {
   changes: Changes;
   anomaly: VolumeAnomaly;
   coverage_detail: CoverageDetail;
+  fleet: FleetItem[];
   generated_at: string;
 }
 

@@ -22,6 +22,7 @@ from .routers import api as api_router
 from .routers import auth as auth_router
 from .routers import alerts as alerts_router
 from .routers import health as health_router
+from .routers import export as export_router
 from .routers import ingest as ingest_router
 from .routers import share as share_router
 from .version import VERSION
@@ -114,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(api_router.router)
     app.include_router(ingest_router.router)
     app.include_router(health_router.router)
+    app.include_router(export_router.router)
     app.include_router(alerts_router.router)
     app.include_router(share_router.router)
     app.include_router(share_router.public_router)

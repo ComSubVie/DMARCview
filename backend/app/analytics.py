@@ -20,6 +20,7 @@ from .config import get_settings
 from .geoip import COUNTRY_NAMES, country_flag
 from .models import (
     Domain,
+    DomainHealthSnapshot,
     DomainSettings,
     IpMeta,
     Report,
@@ -310,6 +311,7 @@ def dashboard(session: Session, domain: Optional[Domain], rng: DateRange) -> dic
         "changes": _changes(session, domain_id, rng),
         "anomaly": volume_anomaly(session, domain_id, as_of=rng.end),
         "coverage_detail": _coverage_detail(session, domain, rng),
+        "fleet": _fleet(session, rng) if domain is None else [],
         "generated_at": _iso(datetime.now(timezone.utc)),
     }
 
@@ -752,6 +754,103 @@ def _coverage_detail(session: Session, domain: Optional[Domain], rng: DateRange)
         "pct_latest": pct_latest,
         "ramp_days": ramp_days,
     }
+
+
+def _fleet(session: Session, rng: DateRange) -> list[dict[str, Any]]:
+    """One comparison row per domain for the fleet table."""
+    items: list[dict[str, Any]] = []
+    for domain in session.exec(select(Domain).order_by(Domain.name)).all():
+        messages, aligned, sources = session.exec(
+            select(
+                func.coalesce(func.sum(SourceRecord.message_count), 0),
+                func.coalesce(
+                    func.sum(case((ALIGNED, SourceRecord.message_count), else_=0)), 0
+                ),
+                func.count(distinct(SourceRecord.source_ip)),
+            ).where(
+                SourceRecord.domain_id == domain.id,
+                SourceRecord.report_date >= rng.start,
+                SourceRecord.report_date <= rng.end,
+            )
+        ).one()
+        messages, aligned, sources = int(messages), int(aligned), int(sources)
+        failing_sources = int(
+            session.exec(
+                select(func.count(distinct(SourceRecord.source_ip))).where(
+                    SourceRecord.domain_id == domain.id,
+                    SourceRecord.report_date >= rng.start,
+                    SourceRecord.report_date <= rng.end,
+                    ~ALIGNED,
+                )
+            ).one()
+            or 0
+        )
+        last_report = session.exec(
+            select(func.max(Report.date_end)).where(Report.domain_id == domain.id)
+        ).one()
+        tls_success, tls_failure = session.exec(
+            select(
+                func.coalesce(func.sum(TlsPolicy.total_success), 0),
+                func.coalesce(func.sum(TlsPolicy.total_failure), 0),
+            ).where(
+                TlsPolicy.domain_id == domain.id,
+                TlsPolicy.report_date >= rng.start,
+                TlsPolicy.report_date <= rng.end,
+            )
+        ).one()
+        tls_success, tls_failure = int(tls_success), int(tls_failure)
+        tls_sessions = tls_success + tls_failure
+        policy = _policy_snapshot(session, domain, rng) or {}
+        snapshot = session.exec(
+            select(DomainHealthSnapshot)
+            .where(DomainHealthSnapshot.domain_id == domain.id)
+            .order_by(DomainHealthSnapshot.checked_at.desc())
+            .limit(1)
+        ).first()
+
+        spark_start = max(rng.start, rng.end - timedelta(days=13))
+        spark_rows = session.exec(
+            select(
+                SourceRecord.report_date,
+                func.coalesce(func.sum(SourceRecord.message_count), 0),
+                func.coalesce(
+                    func.sum(case((ALIGNED, SourceRecord.message_count), else_=0)), 0
+                ),
+            )
+            .where(
+                SourceRecord.domain_id == domain.id,
+                SourceRecord.report_date >= spark_start,
+                SourceRecord.report_date <= rng.end,
+            )
+            .group_by(SourceRecord.report_date)
+        ).all()
+        by_date = {day: (int(total), int(al)) for day, total, al in spark_rows}
+        sparkline = []
+        for offset in range((rng.end - spark_start).days + 1):
+            day = spark_start + timedelta(days=offset)
+            total, al = by_date.get(day, (0, 0))
+            sparkline.append({"date": day.isoformat(), "total": total, "aligned": al})
+
+        items.append(
+            {
+                "domain": domain.name,
+                "display_name": domain.display_name,
+                "messages": messages,
+                "aligned": aligned,
+                "aligned_pct": round(aligned / messages * 100, 1) if messages else 0.0,
+                "failing_sources": failing_sources,
+                "sources": sources,
+                "last_report": _iso(last_report),
+                "tls_pct": round(tls_success / tls_sessions * 100, 1) if tls_sessions else None,
+                "policy_p": policy.get("p"),
+                "policy_sp": policy.get("sp"),
+                "health": snapshot.overall if snapshot else None,
+                "health_score": snapshot.score if snapshot else None,
+                "health_checked_at": _iso(snapshot.checked_at) if snapshot else None,
+                "sparkline": sparkline,
+            }
+        )
+    return sorted(items, key=lambda item: (-item["messages"], item["domain"]))
 
 
 def _source_breakdown(session: Session, domain_id: Optional[int], rng: DateRange) -> list[dict[str, Any]]:

@@ -23,6 +23,7 @@ from .geoip import get_asn_resolver
 from .health.dns import get_dns_client
 from .health.service import run_and_store_health, run_and_store_probes
 from .models import Domain, DomainSettings, IpMeta, JobRun, SourceRecord, utcnow
+from .retention import prune
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +102,14 @@ async def job_transport_probes() -> dict:
         "skipped": skipped,
         "errors": errors[:5],
     }
+
+
+async def job_retention() -> dict:
+    settings = get_settings()
+    if settings.retention_days <= 0:
+        return {"skipped": "disabled"}
+    with Session(get_engine()) as session:
+        return prune(session, settings.retention_days)
 
 
 async def job_alerts() -> dict:
@@ -211,6 +220,19 @@ def job_specs() -> list[JobSpec]:
             runner=job_alerts,
             initial_delay=settings.jobs_initial_delay_seconds + 45,
         ),
+        *(
+            [
+                JobSpec(
+                    name="retention",
+                    label="Retention archive and prune",
+                    interval_seconds=24 * 3600,
+                    runner=job_retention,
+                    initial_delay=180,
+                )
+            ]
+            if settings.retention_days > 0
+            else []
+        ),
     ]
 
 
@@ -286,6 +308,9 @@ def start(stop: asyncio.Event) -> None:
     for spec in job_specs():
         if spec.name == "alerts":
             if not settings.alerts_enabled:
+                continue
+        elif spec.name == "retention":
+            if settings.retention_days <= 0:
                 continue
         elif not settings.health_checks_enabled:
             continue

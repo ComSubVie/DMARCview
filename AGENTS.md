@@ -27,6 +27,8 @@ Stalwart's behaviour before trusting them.
 ../.venv/bin/python -m app.cli import ../samples/*.eml
 ../.venv/bin/python -m app.cli backup --keep 14
 ../.venv/bin/python -m app.cli geo-enrich
+../.venv/bin/python -m app.cli prune --dry-run
+../.venv/bin/python -m app.cli mailbox-debug --days 90 --json
 ../.venv/bin/python -m app.cli migrate
 
 # Frontend (from frontend/)
@@ -52,9 +54,10 @@ docker build -t dmarcview .
 | `backend/app/alerts/` | Rule specs and evaluators, notification channels, evaluation/dedupe service |
 | `backend/app/health/` | DNS/HTTP clients, checks, DKIM selector discovery, TLS probes, engine, persistence |
 | `backend/app/analytics.py` | Read-side aggregation for the dashboard, reports and TLS pages |
-| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `ingest`, `health`, `alerts`, `share` |
+| `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `ingest`, `health`, `alerts`, `share`, `export` |
 | `backend/app/jobs.py` | In-process scheduler (health checks, probes, PTR enrichment, alert evaluation) |
 | `backend/app/share.py` | Share-token signing, public payload shaping, storage helpers |
+| `backend/app/retention.py` | Raw archiving and opt-in report pruning |
 | `backend/app/models.py` | SQLModel schema — the source of truth for Alembic |
 | `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute) |
 | `frontend/src/` | `pages/`, `components/`, `state.tsx`, `api.ts`, `types.ts`, `styles.css` |
@@ -79,7 +82,9 @@ at `0001` first. Do not reintroduce `SQLModel.metadata.create_all()` in applicat
 Malformed attachments must never abort the rest of a batch.
 
 **JMAP queries use RFC 8621 filters.** The date filter is `after`, not `receivedAfter`.
-Servers that reject it are handled by a newest-first scan fallback in `JMAPClient`.
+Servers that reject it are handled by a newest-first scan fallback in `JMAPClient`. Normal
+sync uses a cursor with one day of overlap; `sync --days/--all` exists for mailbox backfills.
+`mailbox-debug` is the read-only way to inspect why a message/payload was skipped.
 
 **DKIM selectors cannot be enumerated.** Stalwart rotates date-based selectors
 (`v1-ed25519-20260101`). Selectors discovered from report `auth_results` are always checked;
@@ -102,6 +107,11 @@ is display context, not part of the identity key.
 public payload may include sources only when the link allows it, and must always strip
 envelope from/to, identities and other header-from domains. Public responses set
 `no-referrer`, `noindex` and `no-store`.
+
+**Retention archives raw payloads before deleting anything.** `app/retention.py` writes
+`data/archive/YYYY/MM/` first, then removes reports and child rows; `--yes` is required for a
+real run, and the scheduler only enables it when `RETENTION_DAYS > 0`. Processed-message
+dedupe keys are intentionally retained.
 
 **Scheduled checks honour `domain_settings.dns_checks_enabled` and `checks_muted_until`;
 manual runs deliberately ignore the mute.**
@@ -164,8 +174,8 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 ## Roadmap
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
-the user asks for them. Share links are delivered; the next planned slice is export and the
-fleet comparison table, then retention.
+the user asks for them. Export, fleet comparison and retention are delivered; the remaining
+RUF and platform slices are trigger-based.
 
 ## Security expectations
 

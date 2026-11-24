@@ -3338,3 +3338,37 @@ table.data td .primary-cell {
     display: none;
   }
 }
+
+
+/* ------------------------------------------------------------------ fleet */
+.fleet-card {
+  margin-top: 16px;
+}
+
+.fleet-table tbody tr {
+  cursor: pointer;
+}
+
+.fleet-table tbody tr:focus-visible {
+  outline: 2px solid rgba(79, 70, 229, 0.55);
+  outline-offset: -2px;
+}
+
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.th-sort:hover,
+.th-sort.active {
+  color: var(--ink-2);
+}

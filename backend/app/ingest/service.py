@@ -391,7 +391,13 @@ def _set_cursor(session: Session, key: str, value: datetime) -> None:
     session.commit()
 
 
-async def sync_jmap(*, trigger: str = "schedule", max_messages: int = 1500) -> dict[str, Any]:
+async def sync_jmap(
+    *,
+    trigger: str = "schedule",
+    max_messages: int = 1500,
+    since_override: Optional[datetime] = None,
+    scan_all: bool = False,
+) -> dict[str, Any]:
     """Fetch new report mail over JMAP and ingest it. Returns a run summary."""
     settings = get_settings()
     if not settings.jmap_enabled:
@@ -407,10 +413,15 @@ async def sync_jmap(*, trigger: str = "schedule", max_messages: int = 1500) -> d
         run_id = run.id
 
         cursor_key = "jmap.last_received_at"
-        since = _get_cursor(session, cursor_key)
-        if since is None:
-            since = utcnow() - _days(settings.ingest_initial_days)
-            log.info("first JMAP sync: looking back %s days", settings.ingest_initial_days)
+        if scan_all:
+            since = None
+        elif since_override is not None:
+            since = since_override
+        else:
+            since = _get_cursor(session, cursor_key)
+            if since is None:
+                since = utcnow() - _days(settings.ingest_initial_days)
+                log.info("first JMAP sync: looking back %s days", settings.ingest_initial_days)
 
     client = JMAPClient(
         settings.jmap_url,
@@ -420,7 +431,7 @@ async def sync_jmap(*, trigger: str = "schedule", max_messages: int = 1500) -> d
     )
     try:
         mailbox = await client.find_mailbox(settings.jmap_mailbox)
-        since_query = since - _days(1) if since else since  # one day of overlap
+        since_query = None if scan_all else (since - _days(1) if since else since)  # one day overlap
         ids = await client.query_email_ids(
             mailbox["id"], since_query, max_messages=max_messages
         )

@@ -15,6 +15,7 @@ import asyncio
 import getpass
 import json
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 from sqlmodel import Session, func, select
@@ -22,10 +23,22 @@ from sqlmodel import Session, func, select
 from .backup import BackupError, backup_database
 from .config import get_settings
 from .db import get_engine, init_db
-from .ingest.jmap import JMAPClient
-from .ingest.service import ingest_files
 from .geoip import get_geo_resolver
-from .models import ProcessedMessage, Report, SourceRecord, TlsFailure, TlsReport
+from .ingest.dmarc import DmarcParseError, parse_dmarc
+from .ingest.jmap import JMAPClient
+from .ingest.mime import MimeParseError, extract_payloads
+from .ingest.service import ingest_files, sync_jmap
+from .ingest.tlsrpt import TlsParseError, parse_tlsrpt
+from .models import (
+    Domain,
+    ProcessedMessage,
+    Report,
+    SourceRecord,
+    TlsFailure,
+    TlsReport,
+    utcnow,
+)
+from .retention import prune
 from .security import hash_password
 
 
@@ -63,6 +76,162 @@ def cmd_init_db(_args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mailbox_debug(args: argparse.Namespace) -> int:
+    """Inspect messages and payloads without writing to the database."""
+    init_db()
+    settings = get_settings()
+    if not settings.jmap_enabled or not settings.jmap_url:
+        print("JMAP is not configured (JMAP_ENABLED/JMAP_URL)", file=sys.stderr)
+        return 1
+
+    async def run() -> dict:
+        client = JMAPClient(
+            settings.jmap_url,
+            settings.jmap_username,
+            settings.jmap_password,
+            settings.jmap_token,
+        )
+        mailbox = await client.find_mailbox(settings.jmap_mailbox)
+        since = None if args.all else utcnow() - timedelta(days=args.days)
+        ids = await client.query_email_ids(mailbox["id"], since, max_messages=args.max)
+        emails = await client.get_emails(ids)
+        items: list[dict] = []
+        with Session(get_engine()) as session:
+            for email in emails:
+                entry: dict = {
+                    "id": email.get("id"),
+                    "received_at": email.get("receivedAt"),
+                    "subject": email.get("subject"),
+                    "payloads": [],
+                    "error": None,
+                }
+                try:
+                    raw = await client.download(email["blobId"], f"{email['id']}.eml")
+                    parsed, payloads = extract_payloads(raw)
+                    entry["message_id"] = parsed.message_id
+                    for payload in payloads:
+                        info = {
+                            "kind": payload.kind,
+                            "filename": payload.filename,
+                            "sha256": payload.sha256,
+                        }
+                        processed = session.exec(
+                            select(ProcessedMessage).where(
+                                ProcessedMessage.source_key == f"jmap:{email.get('id')}"
+                            )
+                        ).first()
+                        info["processed"] = processed.status if processed else None
+                        info["processed_error"] = processed.error if processed else None
+                        try:
+                            if payload.kind == "tlsrpt":
+                                report = parse_tlsrpt(payload.data)
+                                domain = session.exec(
+                                    select(Domain).where(Domain.name == report.policy_domain)
+                                ).first()
+                                info.update(
+                                    {
+                                        "report_id": report.report_id,
+                                        "org_name": report.org_name,
+                                        "domain": report.policy_domain,
+                                        "date_begin": report.date_begin.isoformat(),
+                                        "date_end": report.date_end.isoformat(),
+                                    }
+                                )
+                                info["raw_in_db"] = (
+                                    session.exec(
+                                        select(TlsReport.id).where(
+                                            TlsReport.raw_sha256 == payload.sha256
+                                        )
+                                    ).first()
+                                    is not None
+                                )
+                                info["unique_in_db"] = bool(
+                                    domain
+                                    and session.exec(
+                                        select(TlsReport.id).where(
+                                            TlsReport.org_name == report.org_name,
+                                            TlsReport.report_id == report.report_id,
+                                            TlsReport.domain_id == domain.id,
+                                        )
+                                    ).first()
+                                )
+                            else:
+                                report = parse_dmarc(payload.data)
+                                domain = session.exec(
+                                    select(Domain).where(Domain.name == report.policy_domain)
+                                ).first()
+                                info.update(
+                                    {
+                                        "report_id": report.report_id,
+                                        "org_name": report.org_name,
+                                        "domain": report.policy_domain,
+                                        "date_begin": report.date_begin.isoformat(),
+                                        "date_end": report.date_end.isoformat(),
+                                    }
+                                )
+                                info["raw_in_db"] = (
+                                    session.exec(
+                                        select(Report.id).where(
+                                            Report.raw_sha256 == payload.sha256
+                                        )
+                                    ).first()
+                                    is not None
+                                )
+                                info["unique_in_db"] = bool(
+                                    domain
+                                    and session.exec(
+                                        select(Report.id).where(
+                                            Report.org_name == report.org_name,
+                                            Report.report_id == report.report_id,
+                                            Report.domain_id == domain.id,
+                                        )
+                                    ).first()
+                                )
+                        except (DmarcParseError, TlsParseError) as exc:
+                            info["parse_error"] = str(exc)
+                        entry["payloads"].append(info)
+                except MimeParseError as exc:
+                    entry["error"] = f"MIME: {exc}"
+                except Exception as exc:  # noqa: BLE001
+                    entry["error"] = str(exc)
+                items.append(entry)
+        return {
+            "mailbox": mailbox.get("name"),
+            "since": None if since is None else since.isoformat(),
+            "messages": len(emails),
+            "items": items,
+        }
+
+    try:
+        result = asyncio.run(run())
+    except Exception as exc:  # noqa: BLE001
+        print(f"mailbox debug failed: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(result, indent=2))
+        return 0
+    print(f"{result['messages']} messages in {result['mailbox']} (since {result['since'] or 'beginning'})")
+    for item in result["items"]:
+        print(f"- {item['id']} {item['received_at']} {item['subject']}")
+        if item["error"]:
+            print(f"    error: {item['error']}")
+        for payload in item["payloads"]:
+            if "parse_error" in payload:
+                print(f"    {payload['kind']} {payload['filename']}: {payload['parse_error']}")
+                continue
+            print(
+                f"    {payload['kind']} {payload['filename']} "
+                f"domain={payload['domain']} report={payload['report_id']}"
+            )
+            print(
+                f"      processed={payload['processed']} raw_in_db={payload['raw_in_db']} "
+                f"unique_in_db={payload['unique_in_db']}"
+            )
+            if payload["processed_error"]:
+                print(f"      processed_error: {payload['processed_error']}")
+    return 0
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     init_db()
     paths = _collect(args.paths)
@@ -75,12 +244,23 @@ def cmd_import(args: argparse.Namespace) -> int:
     return 0 if not result.errors else 1
 
 
-def cmd_sync(_args: argparse.Namespace) -> int:
+def cmd_sync(args: argparse.Namespace) -> int:
     from .poller import run_sync
 
     init_db()
     try:
-        result = asyncio.run(run_sync("cli"))
+        if args.all or args.days is not None:
+            since = None if args.all else utcnow() - timedelta(days=args.days)
+            result = asyncio.run(
+                sync_jmap(
+                    trigger="cli",
+                    since_override=since,
+                    scan_all=bool(args.all),
+                    max_messages=args.max,
+                )
+            )
+        else:
+            result = asyncio.run(run_sync("cli"))
     except Exception as exc:  # noqa: BLE001
         print(f"sync failed: {exc}", file=sys.stderr)
         return 1
@@ -177,6 +357,22 @@ def cmd_geo_enrich(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prune(args: argparse.Namespace) -> int:
+    init_db()
+    settings = get_settings()
+    days = args.days if args.days is not None else settings.retention_days
+    if days <= 0:
+        print("retention is off: set RETENTION_DAYS or pass --days", file=sys.stderr)
+        return 1
+    if not args.dry_run and not args.yes:
+        print("refusing to delete without --yes (use --dry-run to preview)", file=sys.stderr)
+        return 1
+    with Session(get_engine()) as session:
+        result = prune(session, days, dry_run=args.dry_run)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def cmd_stats(_args: argparse.Namespace) -> int:
     init_db()
     with Session(get_engine()) as session:
@@ -203,7 +399,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_import)
 
     p = sub.add_parser("sync", help="run one JMAP sync now")
+    p.add_argument("--days", type=int, default=None, help="scan from this many days ago")
+    p.add_argument("--all", action="store_true", help="scan the whole mailbox (up to --max)")
+    p.add_argument("--max", type=int, default=1500, help="maximum messages to fetch")
     p.set_defaults(func=cmd_sync)
+
+    p = sub.add_parser("mailbox-debug", help="inspect mailbox messages and payloads without writing")
+    p.add_argument("--days", type=int, default=90, help="look back this many days (default 90)")
+    p.add_argument("--all", action="store_true", help="scan the whole mailbox")
+    p.add_argument("--max", type=int, default=1500, help="maximum messages to inspect")
+    p.add_argument("--json", action="store_true", help="print machine-readable output")
+    p.set_defaults(func=cmd_mailbox_debug)
 
     p = sub.add_parser("probe", help="check JMAP connectivity and mailbox lookup")
     p.set_defaults(func=cmd_probe)
@@ -215,6 +421,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--destination", help="directory for the snapshot")
     p.add_argument("--keep", type=int, default=None, help="number of snapshots to keep")
     p.set_defaults(func=cmd_backup)
+
+    p = sub.add_parser("prune", help="archive and delete reports older than RETENTION_DAYS")
+    p.add_argument("--days", type=int, default=None, help="override RETENTION_DAYS")
+    p.add_argument("--dry-run", action="store_true", help="report what would be archived and deleted")
+    p.add_argument("--yes", action="store_true", help="confirm actual deletion")
+    p.set_defaults(func=cmd_prune)
 
     p = sub.add_parser("geo-enrich", help="backfill countries for existing report rows")
     p.add_argument("--all", action="store_true", help="re-resolve every IP, not only unknown rows")

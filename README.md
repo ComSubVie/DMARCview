@@ -43,6 +43,8 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
 - **Share safely.** Signed, expiring, revocable read-only links for one domain or the whole
   fleet — no account required. Raw reports, search, alert settings and the admin area stay
   private.
+- **Export or compare.** Download the current view as CSV/JSON, a capped raw-report ZIP, or
+  compare every domain side by side (volume, alignment, TLS, policy, health, 14-day trend).
 - **Report browser.** Search, filter, inspect every record, download the original XML/JSON.
 - **Boring to operate.** One container, one SQLite file, no external services, no
   telemetry, no third-party IP lookups (GeoIP is local).
@@ -225,6 +227,7 @@ All settings are environment variables (`.env` is loaded automatically).
 | `PTR_ENRICHMENT_ENABLED` | `true` | Reverse-resolve sending IPs in the background. |
 | `JOBS_INITIAL_DELAY_SECONDS` | `25` | Delay before the first scheduled run after boot. |
 | `BACKUP_KEEP` | `14` | Local snapshots retained by `app.cli backup`. |
+| `RETENTION_DAYS` | `0` | Archive raw payloads and prune reports older than this. `0` keeps forever. |
 | `ALERTS_ENABLED` | `true` | Run the alert evaluator on a schedule. |
 | `ALERT_INTERVAL_MINUTES` | `60` | Alert evaluation cadence. |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Minimum gap between repeated episodes of one finding. |
@@ -294,11 +297,16 @@ afterwards; the command reports IPs, resolved IPs and updated rows.
 python -m app.cli hash-password       # print a PBKDF2 hash
 python -m app.cli init-db             # create/migrate the schema
 python -m app.cli probe               # JMAP session + mailbox discovery
-python -m app.cli sync                # one JMAP sync (cron-friendly)
+python -m app.cli sync                # one JMAP sync (incremental, cron-friendly)
+python -m app.cli sync --days 90      # backfill from a date, ignoring the cursor
+python -m app.cli sync --all          # rescan the whole mailbox (up to --max)
+python -m app.cli mailbox-debug --days 90 --json  # read-only message/payload report
 python -m app.cli import samples/*.eml  # offline import of .eml / .zip
 python -m app.cli migrate             # apply database migrations
 python -m app.cli backup --keep 14    # consistent SQLite snapshot
 python -m app.cli geo-enrich          # backfill countries for existing rows
+python -m app.cli prune --dry-run     # preview retention (archive + delete)
+python -m app.cli prune --days 365 --yes  # archive and delete reports older than a year
 python -m app.cli stats               # row counts
 ```
 
@@ -356,6 +364,10 @@ Everything below requires the session cookie (obtained via `POST /api/auth/login
 | `POST` | `/api/share-links` | Create a signed read-only link |
 | `POST` | `/api/share-links/{id}/revoke` | Revoke a link immediately |
 | `GET` | `/api/public/{token}` | Unauthenticated read-only dashboard payload |
+| `GET` | `/api/export/reports.csv` / `.json` | DMARC reports with current filters |
+| `GET` | `/api/export/sources.csv` | Aggregated sending sources |
+| `GET` | `/api/export/tls.csv` | TLS-RPT reports |
+| `GET` | `/api/export/raw.zip` | Capped archive of original XML/JSON |
 | `GET` | `/api/storage` | Database, archive and backup sizes |
 | `GET` | `/api/jobs` | Scheduled jobs and their last run |
 | `GET` | `/api/health` | Unauthenticated liveness probe |
@@ -394,9 +406,9 @@ Everything below requires the session cookie (obtained via `POST /api/auth/login
 ## Roadmap
 
 v1.2 added alerting over SMTP, Telegram, Signal and webhooks; v1.3 added sender identities
-and period-over-period changes; v1.4 completed analytics with a robust volume anomaly score,
-coverage reporting and URL-backed filters. v1.5 adds signed read-only share links and the
-remaining quick wins. Next up: export, fleet comparison and retention. Sequencing, effort estimates and the
+and period-over-period changes; v1.4 completed analytics; v1.5 added signed read-only share
+links; v1.6 added export and a sortable fleet; v1.7 adds opt-in retention with raw archiving.
+Next: RUF or platform work when triggered. Sequencing, effort estimates and the
 decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
@@ -405,7 +417,7 @@ decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (84 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (90 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -500,13 +512,34 @@ can be revoked but not recovered.
   a per-token rate limit.
 - Revoke from the same drawer; the public link fails immediately.
 
+## Export & fleet
+
+- **Export:** `reports.csv` / `reports.json`, `sources.csv` and `tls.csv` honour the current
+  domain, period and report-search filters. `raw.zip` returns the original XML/JSON, capped
+  at 500 reports or 200 MB.
+- **Fleet comparison:** with *All domains* selected, the dashboard shows a sortable table with
+  volume, alignment, failing sources, last report, TLS success, policy, health and a 14-day
+  trend. Click any row to drill into that domain.
+
 ## Backups & retention
 
 `python -m app.cli backup` writes a consistent snapshot with `sqlite3.Connection.backup()`
 (safe while the app is serving), verifies it with `PRAGMA integrity_check`, and keeps the
-last `BACKUP_KEEP` files in `data/backups/`. Retention of report data is **off by default**:
-nothing is pruned until you set a policy, and the Ingestion page shows database size, raw
+last `BACKUP_KEEP` files in `data/backups/`. The Ingestion page shows database size, raw
 archive size and growth so the decision can be made with numbers.
+
+Retention is **off by default** (`RETENTION_DAYS=0`). When set, a daily scheduler job archives
+each old report's original XML/JSON to `data/archive/YYYY/MM/` and then deletes the report and
+its child rows. Run it manually with a preview first:
+
+```bash
+python -m app.cli prune --dry-run --days 365
+python -m app.cli prune --days 365 --yes
+```
+
+The dry run reports the report/row counts and bytes it would archive. Actual deletion requires
+`--yes`. Processed-message dedupe keys are kept, so a pruned message is not re-imported. Local
+archives are not part of `app.cli backup`; include `data/archive/` in any off-box backup.
 
 ## Security notes
 
@@ -530,7 +563,7 @@ archive size and growth so the decision can be made with numbers.
 | `mailbox 'DMARC' not found` | `probe` lists the real folder names; adjust `JMAP_MAILBOX` |
 | No reports appear | Check DNS `rua=` records, then `python -m app.cli sync` and look at Ingestion → recent runs |
 | `unable to open database file` | The container user cannot write `/data`; fix volume ownership |
-| Countries show *Unknown* | No `.mmdb` found — run `python3 scripts/fetch_geoip.py geoip` and `docker compose restart` |
+| Countries show *Unknown* | No `.mmdb` found, or the row predates it — fetch the database, restart, then `python -m app.cli geo-enrich` |
 | GeoIP download says `CERTIFICATE_VERIFY_FAILED` | The script now tries the system store; otherwise pass `--ca-file /etc/ssl/cert.pem` or run `./.venv/bin/python scripts/fetch_geoip.py` |
 | A report is skipped | Its submitter/report-id or digest was already ingested; check `ProcessedMessage` / `Report.raw_sha256` |
 | TLS page is empty | TLS-RPT reports only arrive if `_smtp._tls` publishes `rua=` |
@@ -539,6 +572,32 @@ archive size and growth so the decision can be made with numbers.
 | MTA-STS not reachable | The policy must be served over HTTPS at `mta-sts.<domain>/.well-known/mta-sts.txt` |
 | `no such table` after upgrading | Run `python -m app.cli migrate` (also runs on start) |
 | `unsupportedFilter` on sync | Older builds sent `receivedAfter`; 1.1.1+ uses the RFC 8621 `after` filter and falls back to scanning if a server rejects it |
+| Fewer TLS/DMARC reports than the mailbox | Duplicates, a report-id collision, or messages older than the incremental cursor — run `mailbox-debug` and see below |
+
+### Fewer reports than the mailbox
+
+Run the read-only diagnostic on the server:
+
+```bash
+docker compose exec dmarcview python -m app.cli mailbox-debug --days 90 --json
+```
+
+For every message it prints each payload's SHA-256, parsed report-id/domain, and three flags:
+
+- `processed` — whether the message key was already recorded (`ok`/`partial`/`error`).
+- `raw_in_db` — the exact payload hash exists (byte-identical duplicate).
+- `unique_in_db` — the `(org, report-id, domain)` key exists, even if the bytes differ.
+
+Interpretation:
+
+- all messages show `raw_in_db=true` → they are duplicates of an already stored report;
+- `unique_in_db=true` but `raw_in_db=false` → distinct reports share a report-id (TLS reporters
+  sometimes omit `report-id`); this is the collision to fix;
+- messages absent from the output → outside the window/folder;
+- messages present with all flags false → the incremental cursor skipped them; backfill with
+  `python -m app.cli sync --days 90` or `sync --all`.
+
+Also check Ingestion → recent runs for `messages_seen`, `tls_reports_created` and errors.
 
 ---
 

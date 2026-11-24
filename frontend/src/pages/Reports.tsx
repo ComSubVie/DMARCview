@@ -279,6 +279,10 @@ export function ReportsPage() {
 
   const from = data ? (data.page - 1) * data.page_size + 1 : 0;
   const to = data ? Math.min(data.total, data.page * data.page_size) : 0;
+  const exportQuery = new URLSearchParams({ days: String(days) });
+  if (domain !== "all") exportQuery.set("domain", domain);
+  if (debounced) exportQuery.set("q", debounced);
+  const exportBase = `/api/export/reports.csv?${exportQuery.toString()}`;
 
   return (
     <div className="fade-in">
@@ -287,7 +291,15 @@ export function ReportsPage() {
           <h1>Reports</h1>
           <p>Original DMARC aggregate reports, exactly as reporters sent them.</p>
         </div>
-        <span className="chip violet">{data ? `${formatNumber(data.total)} reports` : "—"}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <a className="btn ghost" href={exportBase} download>
+            CSV
+          </a>
+          <a className="btn ghost" href={`/api/export/raw.zip?${exportQuery.toString()}`} download>
+            Raw ZIP
+          </a>
+          <span className="chip violet">{data ? `${formatNumber(data.total)} reports` : "—"}</span>
+        </div>
       </div>
 
       <section className="card">

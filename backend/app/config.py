@@ -92,6 +92,7 @@ class Settings:
     http_timeout_seconds: float = 6.0
     ptr_enrichment_enabled: bool = True
     backup_keep: int = 14
+    retention_days: int = 0  # 0 = keep forever
     jobs_initial_delay_seconds: int = 25
 
     # Alerts

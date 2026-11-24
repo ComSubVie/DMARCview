@@ -84,7 +84,7 @@ function GroupRow({
   );
 }
 
-export function SourcesCard({ sources }: { sources: Source[] }) {
+export function SourcesCard({ sources, exportHref }: { sources: Source[]; exportHref?: string }) {
   const [openVerified, setOpenVerified] = useState(true);
   const [openUnverified, setOpenUnverified] = useState(true);
 
@@ -117,9 +117,16 @@ export function SourcesCard({ sources }: { sources: Source[] }) {
           <h2 className="card-title">Sending sources</h2>
           <p className="card-sub">Who is sending as you, and whether each message could be verified</p>
         </div>
-        <span className="chip violet">
-          {sources.length} sources · {new Set(sources.flatMap((source) => source.providers)).size || sources.length} providers
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {exportHref ? (
+            <a className="btn ghost" href={exportHref} download>
+              CSV
+            </a>
+          ) : null}
+          <span className="chip violet">
+            {sources.length} sources · {new Set(sources.flatMap((source) => source.providers)).size || sources.length} providers
+          </span>
+        </div>
       </div>
       <div className="card-body" style={{ paddingTop: 8, paddingBottom: 14 }}>
         <table className="data sources-table">

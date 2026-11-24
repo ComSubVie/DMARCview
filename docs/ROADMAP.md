@@ -1,11 +1,11 @@
 # Roadmap
 
-_Rev 9 · 24 November 2026 · share links and quick wins delivered (v1.5)_
+_Rev 11 · 24 November 2026 · retention delivered (v1.7)_
 
 v1 answered **"what happened?"**; v1.1 added **"is my configuration correct?"**; v1.2 added
-**"tell me when it changes"**; v1.4 completed **why it changed**; v1.5 starts distribution with
-signed read-only share links and finishes the quick-win list. Next: export, fleet comparison and
-retention.
+**"tell me when it changes"**; v1.4 completed **why it changed**; v1.5 added signed read-only
+sharing; v1.6 added export and a sortable fleet; v1.7 adds opt-in retention with raw
+archiving. RUF and platform work remain trigger-based.
 
 ## Delivered so far
 
@@ -26,7 +26,10 @@ retention.
 | **Coverage** | Reporter coverage (silent reporters vs the previous period), other header-from domains checked against the effective `sp=` policy, and the `pct=` ramp timeline. |
 | **Share links** | HMAC-signed, expiring, revocable read-only links; only token hashes stored; public dashboard/TLS view with sources optional and envelope identities stripped; usage tracking and revoke. |
 | **Quick wins** | Print stylesheet, editable domain display name/notes, report search persisted in the URL, and per-domain mute for scheduled health checks/probes (now actually honoured by the scheduler). |
-| **Tests** | 84 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage, share links, domain profile, check mute and GeoIP backfill. |
+| **Export** | Reports CSV/JSON, sources CSV and TLS CSV with current filters; capped `raw.zip` (500 reports / 200 MB) and export actions in the UI. |
+| **Fleet comparison** | Sortable domain table with volume, alignment, failing sources, last report, TLS success, policy, health and a 14-day sparkline; click-through to the domain. |
+| **Retention** | Opt-in `RETENTION_DAYS`; raw XML/JSON archived to `data/archive/YYYY/MM/` before deleting reports and child rows; dry-run CLI and daily scheduler job. |
+| **Tests** | 90 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage, share links, domain profile, check mute, GeoIP backfill, export, fleet and retention. |
 
 Known limits: DNSSEC relies on the resolver's AD flag (no chain validation); BIMI checks
 presence only; probes need outbound port 25; alert rules are global (no per-domain overrides
@@ -38,7 +41,7 @@ or mute yet) and failed deliveries are recorded but not retried.
 | --- | --- | --- |
 | 1 | **SMTP + Telegram + Signal + webhook** alerts | Delivered. Signal runs through a `signal-cli` sidecar. |
 | 2 | App **may probe MX on 25** and other mail ports | Delivered: STARTTLS, certificates, DANE. |
-| 3 | **No off-box backup target yet**, retention undecided | Keep-forever default, local snapshots, growth panel; retention opt-in. |
+| 3 | **No off-box backup target yet**; retention is opt-in | Keep-forever default; when enabled, raw payloads are archived locally before pruning. Off-box backup is still open. |
 | 4 | **Single admin**; read-only **share links without authentication** | Delivered: signed, revocable tokens at `/s/<token>`, default 7 days, 90-day cap. No OIDC/SSO. |
 | 5 | **Analytics before sharing** (Rev 5, 24 Nov 2026) | No technical dependency; for a single-admin deployment, explaining changes is worth more than distributing them. Share links can move forward at any time if external access becomes necessary. |
 
@@ -46,14 +49,12 @@ or mute yet) and failed deliveries are recorded but not retried.
 
 | Phase | Theme | Effort | Status |
 | --- | --- | --- | --- |
-| **3.2–3.3** | Export + fleet comparison table | 3–4 d | **next** |
-| **3.4** | Retention (archive + prune) | 0.5 d | when decided |
-| **4** | Forensic (RUF) reports | 3–4 d | optional |
+| **4** | Forensic (RUF) reports | 3–4 d | optional / next |
 | **5** | Platform: Postgres, IMAP, tokens, metrics | 8–10 d | trigger-based |
 | **6b** | DMARCbis readiness | 2–4 d | when the RFC is final |
 
-≈ **16–22 focused engineer-days** remaining, tests included. Export, retention and RUF can be
-reordered freely.
+≈ **13–18 focused engineer-days** remaining, tests included. RUF and platform work are both
+optional and can be reordered freely.
 
 ---
 
@@ -87,7 +88,7 @@ Phase 6a is complete; the next slice is distribution.
 
 ---
 
-## Phase 3 — Export, fleet, retention (4–5 days)
+## Phase 3 — Export, fleet, retention
 
 ### 3.1 Read-only share links (delivered)
 
@@ -102,20 +103,22 @@ Phase 6a is complete; the next slice is distribution.
 - UI: topbar Share drawer with scope/expiry/include-sources, copy-once URL, active links and
   revoke; `/s/<token>` renders a read-only shell with a shared-view badge.
 
-### 3.2 Export (2 d)
+### 3.2 Export (delivered)
 
-Streamed `reports.csv|json`, `sources.csv`, `tls.csv` with current filters; capped
-`raw.zip` (500 reports / 200 MB); "Export current view" buttons.
+`reports.csv|json`, `sources.csv` and `tls.csv` with the current filters, plus a capped
+`raw.zip` (500 reports / 200 MB). CSV, raw-ZIP and TLS export actions are in the UI.
 
-### 3.3 Fleet comparison (1–2 d)
+### 3.3 Fleet comparison (delivered)
 
-Sortable domain table: messages, aligned %, failing sources, last report, TLS success,
-policy, health, sparkline, click-through.
+Sortable domain table with messages, alignment, failing sources, last report, TLS success,
+policy, health and a 14-day sparkline; clicking a row drills into the domain.
 
-### 3.4 Retention (0.5 d)
+### 3.4 Retention (delivered)
 
-Opt-in only: `RETENTION_DAYS`, archive raw payloads to `data/archive/YYYY/MM/` before
-pruning, `cli prune --dry-run`. The storage panel already shows growth.
+Opt-in `RETENTION_DAYS`: a daily job (or `app.cli prune`) archives raw XML/JSON to
+`data/archive/YYYY/MM/`, then deletes reports and child rows older than the cutoff. `prune
+--dry-run` reports counts and bytes; actual deletion requires `--yes`. Processed-message
+dedupe keys are retained, and archives must be included in any off-box backup.
 
 ---
 
@@ -174,7 +177,7 @@ per-domain scheduled-check mute.
 
 ## Still open
 
-1. **Off-box backup:** when a target appears, the local snapshot format is what it syncs.
-2. **Retention:** revisit once the storage panel shows real growth.
-3. **Alert follow-ups:** per-domain overrides and delivery retry after real-world use.
-4. **Share-link rate limit:** currently per-process memory; revisit if multiple workers/replicas are added.
+1. **Off-box backup:** when a target appears, sync the SQLite snapshot and `data/archive/`.
+2. **Alert follow-ups:** per-domain overrides and delivery retry after real-world use.
+3. **Share-link rate limit:** currently per-process memory; revisit if multiple workers/replicas are added.
+4. **RUF/PII policy:** decide whether forensic reports are worth the extra handling before Phase 4.

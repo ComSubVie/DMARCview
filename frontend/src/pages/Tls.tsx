@@ -294,6 +294,17 @@ export function TlsPage() {
             {kpis.submitters === 1 ? "reporter" : "reporters"}
           </span>
           <span className="stamp">MTA-STS and DANE session telemetry</span>
+          <a
+            className="btn ghost"
+            href={`/api/export/tls.csv?${new URLSearchParams({
+              ...(domain === "all" ? {} : { domain }),
+              days: String(days),
+            }).toString()}`}
+            download
+            style={{ marginTop: 8 }}
+          >
+            Export CSV
+          </a>
         </div>
       </div>
 
