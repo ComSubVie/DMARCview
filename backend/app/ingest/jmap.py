@@ -474,8 +474,14 @@ class JMAPClient:
                 "rcptTo": [{"email": recipient} for recipient in recipients],
             },
         }
+        submission_args: dict[str, Any] = {
+            "accountId": session.account_id,
+            "create": {"submission": submission},
+        }
         if sent is not None:
-            submission["onSuccessUpdateEmail"] = {
+            # onSuccessUpdateEmail is a top-level EmailSubmission/set argument,
+            # not a property of the submission object.
+            submission_args["onSuccessUpdateEmail"] = {
                 "#submission": {
                     f"mailboxIds/{sent['id']}": True,
                     f"mailboxIds/{drafts['id']}": None,
@@ -483,24 +489,38 @@ class JMAPClient:
                     "keywords/$seen": True,
                 }
             }
-        result = await self.call(
-            [
-                [
-                    "EmailSubmission/set",
-                    {
-                        "accountId": session.account_id,
-                        "create": {"submission": submission},
-                    },
-                    "submit",
-                ]
-            ],
-            using=USING_SUBMISSION,
-        )
+        try:
+            result = await self.call(
+                [["EmailSubmission/set", submission_args, "submit"]],
+                using=USING_SUBMISSION,
+            )
+        except JMAPError as exc:
+            if "onSuccessUpdateEmail" not in str(exc):
+                raise
+            # Some servers reject the implicit Email/set patch. The submission
+            # itself is valid, so retry without the move-to-Sent optimisation.
+            submission_args.pop("onSuccessUpdateEmail", None)
+            result = await self.call(
+                [["EmailSubmission/set", submission_args, "submit"]],
+                using=USING_SUBMISSION,
+            )
         submit_created = (result.get("submit") or {}).get("created") or {}
         submission_id = (submit_created.get("submission") or {}).get("id")
         if not submission_id:
             details = (result.get("submit") or {}).get("notCreated") or {}
-            raise JMAPError(f"JMAP EmailSubmission/set failed: {details}", payload=details)
+            if sent is not None and "onSuccessUpdateEmail" in str(details):
+                # The server rejected the implicit move-to-Sent patch. Retry
+                # the send without that optimisation; the draft remains.
+                submission_args.pop("onSuccessUpdateEmail", None)
+                result = await self.call(
+                    [["EmailSubmission/set", submission_args, "submit"]],
+                    using=USING_SUBMISSION,
+                )
+                submit_created = (result.get("submit") or {}).get("created") or {}
+                submission_id = (submit_created.get("submission") or {}).get("id")
+                details = (result.get("submit") or {}).get("notCreated") or {}
+            if not submission_id:
+                raise JMAPError(f"JMAP EmailSubmission/set failed: {details}", payload=details)
         return str(submission_id)
 
     @staticmethod

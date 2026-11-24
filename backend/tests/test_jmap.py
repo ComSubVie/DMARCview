@@ -27,6 +27,7 @@ class MockServer:
         self.calls: list[tuple[str, dict]] = []
         self.authorization: str | None = None
         self.reject_after = False
+        self.reject_patch = False
         self.uploaded: bytes = b""
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -92,9 +93,27 @@ class MockServer:
                         ["Email/import", {"accountId": "acc1", "created": {"draft": {"id": "draft-1"}}}, tag]
                     )
                 elif name == "EmailSubmission/set":
-                    responses.append(
-                        ["EmailSubmission/set", {"accountId": "acc1", "created": {"submission": {"id": "sub-1"}}}, tag]
-                    )
+                    if self.reject_patch and "onSuccessUpdateEmail" in args:
+                        responses.append(
+                            [
+                                "EmailSubmission/set",
+                                {
+                                    "accountId": "acc1",
+                                    "notCreated": {
+                                        "submission": {
+                                            "type": "invalidProperties",
+                                            "description": "Field could not be set.",
+                                            "properties": ["onSuccessUpdateEmail"],
+                                        }
+                                    },
+                                },
+                                tag,
+                            ]
+                        )
+                    else:
+                        responses.append(
+                            ["EmailSubmission/set", {"accountId": "acc1", "created": {"submission": {"id": "sub-1"}}}, tag]
+                        )
                 elif name == "Email/get":
                     responses.append(
                         [
@@ -316,3 +335,20 @@ def test_submit_message_uploads_imports_and_submits():
     assert "EmailSubmission/set" in names
     submission = next(args for name, args in server.calls if name == "EmailSubmission/set")
     assert submission["create"]["submission"]["envelope"]["rcptTo"] == [{"email": "ops@example.net"}]
+    assert "onSuccessUpdateEmail" in submission
+    assert "onSuccessUpdateEmail" not in submission["create"]["submission"]
+
+
+def test_submit_message_retries_without_patch_when_server_rejects_it():
+    server = MockServer()
+    server.reject_patch = True
+    client = build_client(server)
+
+    async def run():
+        return await client.submit_message("Digest", "Hello", ["ops@example.net"])
+
+    assert __import__("asyncio").run(run()) == "sub-1"
+    submissions = [args for name, args in server.calls if name == "EmailSubmission/set"]
+    assert len(submissions) == 2
+    assert "onSuccessUpdateEmail" in submissions[0]
+    assert "onSuccessUpdateEmail" not in submissions[1]
