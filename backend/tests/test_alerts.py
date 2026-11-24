@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from app.alerts import channels
 from app.alerts.channels import ChannelResult
 from app.alerts.service import ensure_rules, evaluate
+from app.analytics import volume_anomaly
 from app.models import (
     AlertEvent,
     AlertRule,
@@ -232,6 +233,41 @@ def test_delivery_is_recorded(session: Session, monkeypatch):
     event = session.exec(select(AlertEvent)).one()
     assert event.delivered_at is not None
     assert event.delivery_error is None
+
+
+def test_volume_anomaly_and_spike_alert(session: Session):
+    domain = make_domain(session)
+    only_rule(session, "volume_spike")
+    now = datetime.now(timezone.utc)
+    for i in range(1, 22):
+        day = now - timedelta(days=i)
+        report = make_report(session, domain, begin=day, end=day + timedelta(hours=1), suffix=f"base{i}")
+        add_record(
+            session,
+            report,
+            domain,
+            ip="192.0.2.50",
+            count=5 if i % 2 else 15,
+            dkim_pass=True,
+            spf_pass=True,
+        )
+    spike = make_report(session, domain, begin=now, end=now + timedelta(hours=1), suffix="spike")
+    add_record(session, spike, domain, ip="192.0.2.51", count=100, dkim_pass=True, spf_pass=True)
+
+    anomaly = volume_anomaly(session, domain.id, as_of=now.date())
+    assert anomaly["available"] is True
+    assert anomaly["z"] is not None and anomaly["z"] > 3
+
+    rule = session.exec(select(AlertRule).where(AlertRule.kind == "volume_spike")).one()
+    rule.condition = {**rule.condition, "multiplier": 1000, "min_z": 3, "min_messages": 1}
+    session.add(rule)
+    session.commit()
+
+    result = evaluate_now(session)
+    assert result["created"] == 1
+    event = session.exec(select(AlertEvent)).one()
+    assert event.dedupe_key == "volume"
+    assert "σ" in event.message
 
 
 def test_api_rules_and_manual_run(auth_client, session: Session):

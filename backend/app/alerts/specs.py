@@ -129,6 +129,7 @@ SPECS: dict[str, RuleSpec] = {
             severity="warning",
             fields=(
                 FieldSpec("multiplier", "Multiplier", "float", 3, 1.1, 100, "×"),
+                FieldSpec("min_z", "Anomaly threshold", "float", 3.5, 0, 20, "σ"),
                 FieldSpec("baseline_days", "Baseline", "int", 28, 7, 90, "d"),
                 FieldSpec("min_messages", "Minimum messages", "int", 20, 1, 1_000_000, "msgs"),
             ),

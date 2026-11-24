@@ -24,7 +24,9 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
     result *and* the aligned DMARC verdict shown separately.
   - Sender **identities**: rotating ESP addresses collapse into one row per envelope/DKIM
     identity, with messages, alignment, sources and network context.
-  - Period-over-period deltas ("what changed") and new identities.
+  - Period-over-period deltas ("what changed"), new identities, and a volume anomaly score
+    against the trailing baseline.
+  - Coverage: silent reporters, other header-from domains vs `sp=`, and the `pct` ramp.
   - Top countries, mailbox providers, plain-English summary, and a policy recommendation.
 - **TLS delivery.** Session success rate per MX host, failure reasons
   (`certificate-expired`, `starttls-not-supported`, …) and the reporters behind them.
@@ -367,9 +369,10 @@ Everything below requires the session cookie (obtained via `POST /api/auth/login
 
 ## Roadmap
 
-v1.2 added alerting over SMTP, Telegram, Signal and webhooks; v1.3 adds sender identities
-and period-over-period changes. Next up: coverage and anomaly scoring, then read-only share
-links, export and retention. Sequencing, effort estimates and the
+v1.2 added alerting over SMTP, Telegram, Signal and webhooks; v1.3 added sender identities
+and period-over-period changes; v1.4 completes analytics with a robust volume anomaly score
+(fed into `volume_spike`), coverage reporting, and URL-backed filters. Next up: read-only
+share links, export and retention. Sequencing, effort estimates and the
 decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
@@ -378,7 +381,7 @@ decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (75 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (77 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build

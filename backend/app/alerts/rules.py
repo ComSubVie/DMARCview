@@ -10,6 +10,7 @@ from typing import Any, Callable
 from sqlalchemy import case, func, or_
 from sqlmodel import Session, select
 
+from ..analytics import volume_anomaly
 from ..health.service import latest_probes
 from ..models import (
     Domain,
@@ -263,20 +264,36 @@ def volume_spike(session: Session, domain: Domain, cond: dict, now: datetime) ->
         )
     ).one()
     recent = int(recent or 0)
-    if recent < int(cond["min_messages"]) or baseline <= 0:
+    if recent < int(cond["min_messages"]):
         return []
-    if recent < float(cond["multiplier"]) * baseline:
+    anomaly = volume_anomaly(
+        session,
+        domain.id,
+        baseline_days=int(cond["baseline_days"]),
+        as_of=now.date(),
+    )
+    z = anomaly.get("z")
+    z_hit = bool(anomaly.get("available")) and z is not None and z >= float(cond["min_z"])
+    multiplier_hit = baseline > 0 and recent >= float(cond["multiplier"]) * baseline
+    if not z_hit and not multiplier_hit:
         return []
+    pieces = [f"{recent} messages in the last day"]
+    if baseline > 0:
+        pieces.append(f"{recent / baseline:.1f}× the {baseline:.0f}/day median")
+    if z_hit and z is not None:
+        pieces.append(f"{z:.1f}σ above the trailing baseline")
     return [
         Finding(
             key="volume",
             severity="warning",
             title=f"Volume spike: {recent} messages",
-            message=(
-                f"{recent} messages in the last day versus a {baseline:.0f}/day median over "
-                f"{cond['baseline_days']} days ({recent / baseline:.1f}×)."
-            ),
-            payload={"recent": recent, "baseline": baseline, "multiplier": round(recent / baseline, 2)},
+            message=" · ".join(pieces) + ".",
+            payload={
+                "recent": recent,
+                "baseline": baseline,
+                "multiplier": round(recent / baseline, 2) if baseline else None,
+                "z": z,
+            },
         )
     ]
 

@@ -155,8 +155,8 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
 the user asks for them. The analytics foundation (identities + period changes) is delivered;
-the next planned slice is the analytics remainder (coverage + anomaly scoring), then share
-links and export.
+the analytics phase is complete; the next planned slice is read-only share links, then
+export and retention.
 
 ## Security expectations
 

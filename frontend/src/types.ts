@@ -159,7 +159,18 @@ export interface Dashboard {
   report_gaps: ReportGap[];
   identities: Identities;
   changes: Changes;
+  anomaly: VolumeAnomaly;
+  coverage_detail: CoverageDetail;
   generated_at: string;
+}
+
+export interface VolumeAnomaly {
+  available: boolean;
+  z: number | null;
+  median: number | null;
+  latest: number | null;
+  date: string | null;
+  level: "high" | "normal" | "low";
 }
 
 export interface Identity {
@@ -197,6 +208,39 @@ export interface Changes {
   chips: ChangeChip[];
   new_identities: string[];
   lost_identities: string[];
+}
+
+export interface ReporterCoverage {
+  org: string;
+  reports: number;
+  messages: number;
+  last_report: string | null;
+  days_since: number | null;
+  status: "active" | "silent";
+}
+
+export interface SubdomainCoverage {
+  domain: string;
+  messages: number;
+  aligned_pct: number;
+  sources: number;
+  last_seen: string | null;
+  status: "covered" | "uncovered";
+}
+
+export interface PctPoint {
+  date: string;
+  pct: number;
+}
+
+export interface CoverageDetail {
+  reporters: ReporterCoverage[];
+  subdomains: SubdomainCoverage[];
+  subdomain_policy: string | null;
+  pct_timeline: PctPoint[];
+  pct_start: number | null;
+  pct_latest: number | null;
+  ramp_days: number | null;
 }
 
 export interface ReportGap {

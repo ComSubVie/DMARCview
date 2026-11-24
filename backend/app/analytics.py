@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
+from statistics import median as _median
 from typing import Any, Optional
 
 from sqlalchemy import case, distinct, func, or_
@@ -307,6 +308,8 @@ def dashboard(session: Session, domain: Optional[Domain], rng: DateRange) -> dic
         "report_gaps": _report_gaps(session, domain_id),
         "identities": _identities(session, domain_id, rng),
         "changes": _changes(session, domain_id, rng),
+        "anomaly": volume_anomaly(session, domain_id, as_of=rng.end),
+        "coverage_detail": _coverage_detail(session, domain, rng),
         "generated_at": _iso(datetime.now(timezone.utc)),
     }
 
@@ -553,6 +556,201 @@ def _changes(session: Session, domain_id: Optional[int], rng: DateRange) -> dict
         "chips": chips,
         "new_identities": [label for key, label in current_keys.items() if key not in previous_keys][:5],
         "lost_identities": [label for key, label in previous_keys.items() if key not in current_keys][:5],
+    }
+
+
+def volume_anomaly(
+    session: Session,
+    domain_id: Optional[int] = None,
+    *,
+    baseline_days: int = 28,
+    as_of: Optional[date] = None,
+) -> dict[str, Any]:
+    """Robust z-score of the latest reporting day against a trailing baseline."""
+    as_of = as_of or utcnow().date()
+    since = as_of - timedelta(days=baseline_days + 30)
+    statement = (
+        select(SourceRecord.report_date, func.sum(SourceRecord.message_count))
+        .where(
+            SourceRecord.report_date >= since,
+            SourceRecord.report_date <= as_of,
+        )
+        .group_by(SourceRecord.report_date)
+    )
+    if domain_id is not None:
+        statement = statement.where(SourceRecord.domain_id == domain_id)
+    series = [(day, int(total or 0)) for day, total in session.exec(statement).all() if total]
+    if len(series) < 7:
+        return {"available": False, "z": None, "median": None, "latest": None, "date": None, "level": "normal"}
+
+    latest_date, latest = max(series)
+    values = [
+        total
+        for day, total in series
+        if latest_date - timedelta(days=baseline_days) <= day < latest_date
+    ]
+    if len(values) < 7:
+        return {"available": False, "z": None, "median": None, "latest": latest, "date": latest_date.isoformat(), "level": "normal"}
+    baseline = _median(values)
+    mad = _median([abs(value - baseline) for value in values])
+    if mad > 0:
+        z_value = (latest - baseline) / (1.4826 * mad)
+    else:
+        # Many real domains have a run of identical quiet days, which makes MAD 0.
+        mean = sum(values) / len(values)
+        spread = (sum((value - mean) ** 2 for value in values) / len(values)) ** 0.5
+        z_value = (latest - mean) / spread if spread > 0 else None
+    z = round(z_value, 2) if z_value is not None else None
+    level = "normal"
+    if z is not None and z >= 3:
+        level = "high"
+    elif z is not None and z <= -3:
+        level = "low"
+    return {
+        "available": True,
+        "z": z,
+        "median": round(baseline, 1),
+        "latest": latest,
+        "date": latest_date.isoformat(),
+        "level": level,
+    }
+
+
+def _coverage_detail(session: Session, domain: Optional[Domain], rng: DateRange) -> dict[str, Any]:
+    """Reporter coverage, other sending domains and the policy-pct ramp."""
+    conditions: list[Any] = [
+        Report.report_date >= rng.start,
+        Report.report_date <= rng.end,
+    ]
+    if domain is not None:
+        conditions.append(Report.domain_id == domain.id)
+    rows = session.exec(
+        select(
+            Report.org_name,
+            func.count(Report.id),
+            func.coalesce(func.sum(Report.message_count), 0),
+            func.max(Report.date_end),
+        )
+        .where(*conditions)
+        .group_by(Report.org_name)
+    ).all()
+
+    previous_end = rng.start - timedelta(days=1)
+    previous_start = previous_end - timedelta(days=max(0, rng.days - 1))
+    previous_conditions: list[Any] = [
+        Report.report_date >= previous_start,
+        Report.report_date <= previous_end,
+    ]
+    if domain is not None:
+        previous_conditions.append(Report.domain_id == domain.id)
+    previous_rows = session.exec(
+        select(
+            Report.org_name,
+            func.count(Report.id),
+            func.coalesce(func.sum(Report.message_count), 0),
+            func.max(Report.date_end),
+        )
+        .where(*previous_conditions)
+        .group_by(Report.org_name)
+    ).all()
+
+    now = utcnow()
+
+    def reporter(org: str, reports: int, messages: int, last, status: str) -> dict[str, Any]:
+        last_dt = last
+        if last_dt is not None and last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
+        return {
+            "org": org,
+            "reports": int(reports),
+            "messages": int(messages or 0),
+            "last_report": _iso(last_dt),
+            "days_since": int((now - last_dt).total_seconds() // 86400) if last_dt else None,
+            "status": status,
+        }
+
+    current_orgs = {row[0] for row in rows}
+    reporters = [
+        reporter(org, reports, messages, last, "active")
+        for org, reports, messages, last in rows
+    ]
+    reporters.extend(
+        reporter(org, reports, messages, last, "silent")
+        for org, reports, messages, last in previous_rows
+        if org not in current_orgs
+    )
+    reporters.sort(key=lambda item: (item["status"] != "active", -item["messages"], item["org"]))
+
+    subdomains: list[dict[str, Any]] = []
+    subdomain_policy: Optional[str] = None
+    pct_timeline: list[dict[str, Any]] = []
+    pct_start = pct_latest = ramp_days = None
+    if domain is not None:
+        policy = _policy_snapshot(session, domain, rng) or {}
+        subdomain_policy = policy.get("sp") or policy.get("p")
+        covered = subdomain_policy in ("quarantine", "reject")
+        sub_rows = session.exec(
+            select(
+                SourceRecord.header_from,
+                func.coalesce(func.sum(SourceRecord.message_count), 0),
+                func.coalesce(func.sum(case((ALIGNED, SourceRecord.message_count), else_=0)), 0),
+                func.count(distinct(SourceRecord.source_ip)),
+                func.max(SourceRecord.report_date),
+            )
+            .where(
+                SourceRecord.domain_id == domain.id,
+                SourceRecord.report_date >= rng.start,
+                SourceRecord.report_date <= rng.end,
+                SourceRecord.header_from.is_not(None),
+                func.lower(SourceRecord.header_from) != domain.name.lower(),
+            )
+            .group_by(SourceRecord.header_from)
+        ).all()
+        for header_from, messages, aligned, sources, last_date in sub_rows:
+            messages, aligned = int(messages or 0), int(aligned or 0)
+            subdomains.append(
+                {
+                    "domain": header_from,
+                    "messages": messages,
+                    "aligned_pct": round(aligned / messages * 100, 1) if messages else 0.0,
+                    "sources": int(sources or 0),
+                    "last_seen": last_date.isoformat() if last_date else None,
+                    "status": "covered" if covered else "uncovered",
+                }
+            )
+        subdomains.sort(key=lambda item: -item["messages"])
+
+        pct_rows = session.exec(
+            select(Report.report_date, Report.policy_pct)
+            .where(
+                Report.domain_id == domain.id,
+                Report.report_date >= rng.start,
+                Report.report_date <= rng.end,
+                Report.policy_pct.is_not(None),
+            )
+            .order_by(Report.report_date)
+        ).all()
+        by_date: dict[Any, int] = {}
+        for report_date, pct in pct_rows:
+            by_date[report_date] = int(pct)
+        pct_timeline = [
+            {"date": day.isoformat(), "pct": value} for day, value in sorted(by_date.items())
+        ]
+        if pct_timeline:
+            pct_start = pct_timeline[0]["pct"]
+            pct_latest = pct_timeline[-1]["pct"]
+            first = date.fromisoformat(pct_timeline[0]["date"])
+            last = date.fromisoformat(pct_timeline[-1]["date"])
+            ramp_days = (last - first).days
+
+    return {
+        "reporters": reporters,
+        "subdomains": subdomains,
+        "subdomain_policy": subdomain_policy,
+        "pct_timeline": pct_timeline,
+        "pct_start": pct_start,
+        "pct_latest": pct_latest,
+        "ramp_days": ramp_days,
     }
 
 

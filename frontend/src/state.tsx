@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, ApiError } from "./api";
 import type { Dashboard, Meta } from "./types";
 
@@ -36,13 +37,22 @@ const DataContext = createContext<DataContextValue | null>(null);
 
 const DOMAIN_KEY = "dmarcview.domain";
 const DAYS_KEY = "dmarcview.days";
+const VALID_DAYS = [7, 14, 30, 90];
+
+function storedDays(): number {
+  const stored = Number(localStorage.getItem(DAYS_KEY));
+  return VALID_DAYS.includes(stored) ? stored : 30;
+}
 
 export function DataProvider({ children }: { children: ReactNode }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [meta, setMeta] = useState<Meta | null>(null);
-  const [domain, setDomainState] = useState<string>(() => localStorage.getItem(DOMAIN_KEY) || "all");
+  const [domain, setDomainState] = useState<string>(() => {
+    return searchParams.get("domain") || localStorage.getItem(DOMAIN_KEY) || "all";
+  });
   const [days, setDaysState] = useState<number>(() => {
-    const stored = Number(localStorage.getItem(DAYS_KEY));
-    return [7, 14, 30, 90].includes(stored) ? stored : 30;
+    const fromUrl = Number(searchParams.get("days"));
+    return VALID_DAYS.includes(fromUrl) ? fromUrl : storedDays();
   });
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,6 +91,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [domain, days]);
 
   useEffect(() => {
+    const urlDomain = searchParams.get("domain");
+    const urlDays = Number(searchParams.get("days"));
+    if (urlDomain && meta && !meta.domains.some((item) => item.name === urlDomain)) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("domain");
+      setSearchParams(next, { replace: true });
+      setDomainState("all");
+      return;
+    }
+    if (
+      urlDomain &&
+      urlDomain !== domain &&
+      (!meta || meta.domains.some((item) => item.name === urlDomain))
+    ) {
+      setDomainState(urlDomain);
+      localStorage.setItem(DOMAIN_KEY, urlDomain);
+    }
+    if (VALID_DAYS.includes(urlDays) && urlDays !== days) {
+      setDaysState(urlDays);
+      localStorage.setItem(DAYS_KEY, String(urlDays));
+    }
+  }, [searchParams, meta, domain, days, setSearchParams]);
+
+  useEffect(() => {
     void loadMeta();
   }, [loadMeta]);
 
@@ -101,15 +135,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }, 3800);
   }, []);
 
-  const setDomain = useCallback((value: string) => {
-    setDomainState(value);
-    localStorage.setItem(DOMAIN_KEY, value);
-  }, []);
+  const setDomain = useCallback(
+    (value: string) => {
+      setDomainState(value);
+      localStorage.setItem(DOMAIN_KEY, value);
+      const next = new URLSearchParams(searchParams);
+      if (value === "all") next.delete("domain");
+      else next.set("domain", value);
+      if (days === 30) next.delete("days");
+      else next.set("days", String(days));
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams, days],
+  );
 
-  const setDays = useCallback((value: number) => {
-    setDaysState(value);
-    localStorage.setItem(DAYS_KEY, String(value));
-  }, []);
+  const setDays = useCallback(
+    (value: number) => {
+      setDaysState(value);
+      localStorage.setItem(DAYS_KEY, String(value));
+      const next = new URLSearchParams(searchParams);
+      if (value === 30) next.delete("days");
+      else next.set("days", String(value));
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams],
+  );
 
   const domainLabel = useMemo(() => {
     if (domain === "all") return "All domains";

@@ -122,7 +122,7 @@ export function SourcesCard({ sources }: { sources: Source[] }) {
         </span>
       </div>
       <div className="card-body" style={{ paddingTop: 8, paddingBottom: 14 }}>
-        <table className="data">
+        <table className="data sources-table">
           <thead>
             <tr>
               <th>Source</th>

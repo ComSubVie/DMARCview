@@ -1,11 +1,10 @@
 # Roadmap
 
-_Rev 6 · 24 November 2026 · analytics foundation delivered_
+_Rev 8 · 24 November 2026 · analytics phase complete (v1.4)_
 
-v1 answered **"what happened?"**; v1.1 added **"is my configuration correct?"**; v1.2 adds
-**"tell me when it changes"**. The analytics foundation now goes deeper on **why it changed**:
-sender identities and period-over-period deltas. Coverage and anomaly scoring remain before
-distribution (share links/export).
+v1 answered **"what happened?"**; v1.1 added **"is my configuration correct?"**; v1.2 added
+**"tell me when it changes"**; v1.4 completes the analytics phase — **why it changed**.
+Next comes distribution: read-only share links, export and retention.
 
 ## Delivered so far
 
@@ -21,7 +20,10 @@ distribution (share links/export).
 | **Storage & backups** | Consistent SQLite snapshots with rotation, storage/growth panel, jobs panel. Retention stays **off by default**. |
 | **Dashboard polish** | Report-gap banner when a domain misses its expected interval; copy buttons for DMARC/TLS policy strings and report IDs. |
 | **Analytics foundation** | Sender identities grouped by envelope/header domain + external DKIM domain, with ASN/PTR context; DB-IP ASN Lite fetched by default and backfilled into `ip_meta`; "what changed" chips and new-identity list; full identity drawer. |
-| **Tests** | 75 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes. |
+| **Anomaly score** | Robust z-score (MAD, standard-deviation fallback when MAD is 0) of the latest reporting day against the trailing 28-day baseline; shown on the volume card when \|z\| ≥ 2 and used by the `volume_spike` alert rule (`min_z`). |
+| **URL filters** | Domain and period persist in `?domain=&days=`, so dashboard views are bookmarkable and survive reloads. |
+| **Coverage** | Reporter coverage (silent reporters vs the previous period), other header-from domains checked against the effective `sp=` policy, and the `pct=` ramp timeline. |
+| **Tests** | 77 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage. |
 
 Known limits: DNSSEC relies on the resolver's AD flag (no chain validation); BIMI checks
 presence only; probes need outbound port 25; alert rules are global (no per-domain overrides
@@ -41,19 +43,18 @@ or mute yet) and failed deliveries are recorded but not retried.
 
 | Phase | Theme | Effort | Status |
 | --- | --- | --- | --- |
-| **6a.3** | Analytics remainder: coverage + anomaly scoring | 1–2 d | **next** |
-| **3.1** | Read-only share links | 2–3 d | planned |
+| **3.1** | Read-only share links | 2–3 d | **next** |
 | **3.2–3.3** | Export + fleet comparison table | 3–4 d | planned |
 | **4** | Forensic (RUF) reports | 3–4 d | optional |
 | **5** | Platform: Postgres, IMAP, tokens, metrics | 8–10 d | trigger-based |
 | **6b** | DMARCbis readiness | 2–4 d | when the RFC is final |
 
-≈ **19–27 focused engineer-days** remaining, tests included. Everything after 6a.3 is
-independent and can be reordered without rework.
+≈ **18–25 focused engineer-days** remaining, tests included. Sharing, export and retention
+can be reordered freely.
 
 ---
 
-## Phase 6a — Analytics depth (foundation delivered)
+## Phase 6a — Analytics depth (complete)
 
 ### Delivered
 
@@ -67,12 +68,19 @@ independent and can be reordered without rework.
   identities, plus the new-identity list, on the dashboard summary. The full identity table is
   available in a drawer.
 
-### Remaining (1–2 days)
+- **Anomaly scoring.** The latest reporting day is compared with the trailing 28-day baseline
+  using a robust z-score; when MAD is zero (runs of identical quiet days) it falls back to the
+  standard deviation. The volume card shows the score when |z| ≥ 2, and `volume_spike` accepts
+  a `min_z` threshold alongside the multiplier.
 
-- **Coverage:** reporter coverage per domain, subdomain coverage vs `sp=`, `pct` ramp timeline.
-- **Anomaly scoring:** robust z-score/MAD against a trailing 28-day baseline, feeding the
-  existing `volume_spike` rule instead of duplicating alerting. Deltas are currently exact
-  period-over-period numbers, not anomaly scores.
+- **Coverage.** Reporter coverage marks reporters that were active in the previous period but
+  are silent now; other header-from domains are checked against the effective `sp` (falling
+  back to `p`) and flagged as covered/uncovered; the `pct=` timeline shows the ramp from the
+  first to the latest value.
+- **URL filters.** Domain and period are in the URL, so a dashboard view can be bookmarked or
+  shared.
+
+Phase 6a is complete; the next slice is distribution.
 
 ---
 
@@ -153,7 +161,7 @@ Remaining (<1 day each):
 
 - Print stylesheet for the dashboard.
 - Editable domain display names and notes (`domains.notes` already exists).
-- Filters (domain, period, search) persisted in the URL.
+- Reports search persisted in the URL (domain and period already are).
 - Per-domain mute for scheduled checks.
 
 ---

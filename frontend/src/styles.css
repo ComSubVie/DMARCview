@@ -2963,3 +2963,163 @@ table.data td .primary-cell {
     display: none;
   }
 }
+
+
+/* ---------------------------------------------------------------- coverage */
+.coverage-card {
+  margin-top: 16px;
+}
+
+.coverage-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 22px;
+  padding: 4px 18px 16px;
+}
+
+.coverage-block h3 {
+  margin: 0 0 8px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.coverage-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.coverage-block-head h3 {
+  margin-bottom: 8px;
+}
+
+.coverage-list {
+  display: grid;
+  gap: 1px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.coverage-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #f2f4f9;
+  font-size: 11.5px;
+  min-width: 0;
+}
+
+.coverage-row:last-child {
+  border-bottom: 0;
+}
+
+.coverage-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: #12b76a;
+  flex: none;
+}
+
+.coverage-dot.silent {
+  background: #f79009;
+}
+
+.coverage-name {
+  font-weight: 550;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.coverage-row .tiny {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.coverage-silent {
+  color: #b54708;
+}
+
+.pct-ramp {
+  display: grid;
+  gap: 5px;
+}
+
+.pct-ramp-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #1d2939;
+}
+
+.pct-ramp-value svg {
+  color: var(--ink-4);
+}
+
+.pct-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.pct-steps span {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #f4f6fb;
+  color: var(--ink-3);
+  font-size: 10.5px;
+}
+
+@media (max-width: 1180px) {
+  .coverage-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .coverage-grid {
+    grid-template-columns: 1fr;
+    padding-left: 15px;
+    padding-right: 15px;
+  }
+  .coverage-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .coverage-row .tiny {
+    margin-left: 0;
+  }
+}
+
+
+
+.sources-table {
+  table-layout: fixed;
+}
+
+.sources-table th:first-child {
+  width: 44%;
+}
+
+.sources-table td:first-child {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .sources-table {
+    font-size: 12px;
+  }
+  .sources-table th,
+  .sources-table td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+}

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { CountriesCard } from "../components/CountriesCard";
 import { HealthCard } from "../components/HealthCard";
+import { CoverageCard } from "../components/CoverageCard";
 import { IdentitiesCard } from "../components/IdentitiesCard";
 import { ProbesCard } from "../components/ProbesCard";
 import { KpiCard } from "../components/KpiCard";
@@ -250,7 +251,7 @@ export function DashboardPage() {
           </div>
 
           <div className="grid cols-8-4">
-            <VolumeChart daily={dashboard.daily} days={dashboard.range.days} />
+            <VolumeChart daily={dashboard.daily} days={dashboard.range.days} anomaly={dashboard.anomaly} />
             <SummaryCard
               sentences={kpis.sentences}
               failed={kpis.failed}
@@ -274,6 +275,7 @@ export function DashboardPage() {
           </div>
 
           <IdentitiesCard identities={dashboard.identities} />
+          <CoverageCard coverage={dashboard.coverage_detail} allDomains={domain === "all"} />
         </>
       )}
     </div>

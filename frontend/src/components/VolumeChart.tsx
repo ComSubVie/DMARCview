@@ -9,8 +9,8 @@ import {
   YAxis,
 } from "recharts";
 import { formatNumber, shortDate } from "../lib/format";
-import type { DailyPoint } from "../types";
-import { EmptyState } from "./ui";
+import type { DailyPoint, VolumeAnomaly } from "../types";
+import { Badge, EmptyState } from "./ui";
 
 interface PayloadItem {
   dataKey?: string | number;
@@ -47,7 +47,15 @@ function ChartTooltip({
   );
 }
 
-export function VolumeChart({ daily, days }: { daily: DailyPoint[]; days: number }) {
+export function VolumeChart({
+  daily,
+  days,
+  anomaly,
+}: {
+  daily: DailyPoint[];
+  days: number;
+  anomaly: VolumeAnomaly;
+}) {
   const data = daily.map((point) => ({ ...point, label: shortDate(point.date) }));
   const total = daily.reduce((sum, point) => sum + point.total, 0);
   const peak = Math.max(4, ...daily.map((point) => Math.max(point.aligned, point.failed)));
@@ -61,15 +69,25 @@ export function VolumeChart({ daily, days }: { daily: DailyPoint[]; days: number
             Daily messages · {days === 1 ? "single day" : `last ${days} days`}
           </p>
         </div>
-        <div className="chart-legend">
-          <span>
-            <span className="swatch" style={{ background: "#0f766e" }} />
-            Aligned
-          </span>
-          <span>
-            <span className="swatch" style={{ background: "#e11d48" }} />
-            Failing
-          </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {anomaly.available && anomaly.z !== null && Math.abs(anomaly.z) >= 2 ? (
+            <span title={`Latest day vs the trailing ${28}-day median`}>
+              <Badge tone={anomaly.level === "high" ? "warn" : anomaly.level === "low" ? "info" : "neutral"}>
+                {anomaly.z > 0 ? "+" : ""}
+                {anomaly.z.toFixed(1)}σ
+              </Badge>
+            </span>
+          ) : null}
+          <div className="chart-legend">
+            <span>
+              <span className="swatch" style={{ background: "#0f766e" }} />
+              Aligned
+            </span>
+            <span>
+              <span className="swatch" style={{ background: "#e11d48" }} />
+              Failing
+            </span>
+          </div>
         </div>
       </div>
       <div className="card-body" style={{ paddingTop: 8 }}>

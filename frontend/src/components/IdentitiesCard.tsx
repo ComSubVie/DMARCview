@@ -59,7 +59,7 @@ export function IdentitiesCard({ identities }: { identities: Identities }) {
           <p className="card-sub">Rotating IPs grouped by envelope domain and DKIM identity</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Badge tone="info">{identities.total} identities</Badge>
+          <Badge tone="info">{identities.total} {identities.total === 1 ? "identity" : "identities"}</Badge>
           {identities.items.length > preview.length ? (
             <button className="btn ghost" onClick={() => setOpen(true)} type="button">
               <Layers size={13} />

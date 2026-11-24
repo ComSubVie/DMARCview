@@ -219,6 +219,23 @@ def test_dashboard_changes(auth_client: TestClient, session: Session):
     assert changes["chips"][0]["display"].endswith("%")
 
 
+def test_dashboard_coverage(auth_client: TestClient):
+    upload_all(auth_client)
+    data = auth_client.get("/api/dashboard?domain=tgm.rocks").json()
+    coverage = data["coverage_detail"]
+    orgs = {item["org"] for item in coverage["reporters"]}
+    assert any("google" in org for org in orgs)
+    assert any("microsoft" in org for org in orgs)
+    assert coverage["pct_timeline"]
+    assert coverage["pct_latest"] == 100
+    assert coverage["subdomains"] == []
+
+    all_domains = auth_client.get("/api/dashboard").json()["coverage_detail"]
+    assert all_domains["reporters"]
+    assert all_domains["subdomains"] == []
+    assert all_domains["pct_timeline"] == []
+
+
 def test_dashboard_all_domains(auth_client: TestClient):
     upload_all(auth_client)
     dashboard = auth_client.get("/api/dashboard").json()
