@@ -21,6 +21,7 @@ class Lookup:
     exists: bool = False
     ad: bool = False
     error: Optional[str] = None
+    nxdomain: bool = False
 
     @property
     def ok(self) -> bool:
@@ -83,7 +84,7 @@ class DnspythonClient(BaseDnsClient):
         try:
             answer = self._resolver.resolve(name, rtype, raise_on_no_answer=False)
         except dns.resolver.NXDOMAIN:
-            return Lookup(exists=False)
+            return Lookup(exists=False, nxdomain=True)
         except (dns.resolver.LifetimeTimeout, dns.exception.Timeout):
             return Lookup(error="DNS timeout")
         except dns.resolver.NoNameservers:

@@ -3372,3 +3372,64 @@ table.data td .primary-cell {
 .th-sort.active {
   color: var(--ink-2);
 }
+
+
+/* DMARCbis readiness */
+.dmarcbis-card {
+  margin-top: 22px;
+}
+
+.dmarcbis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dmarcbis-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 13px 14px;
+  background: #fbfcff;
+}
+
+.dmarcbis-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.dmarcbis-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.dmarcbis-item .badge {
+  max-width: 65%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dmarcbis-item p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.dmarcbis-foot {
+  margin: 14px 0 0;
+}
+
+@media (max-width: 900px) {
+  .dmarcbis-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .dmarcbis-grid {
+    grid-template-columns: 1fr;
+  }
+}

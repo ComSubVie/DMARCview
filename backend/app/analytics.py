@@ -685,11 +685,30 @@ def _coverage_detail(session: Session, domain: Optional[Domain], rng: DateRange)
 
     subdomains: list[dict[str, Any]] = []
     subdomain_policy: Optional[str] = None
+    policy_source: Optional[str] = None
     pct_timeline: list[dict[str, Any]] = []
     pct_start = pct_latest = ramp_days = None
     if domain is not None:
-        policy = _policy_snapshot(session, domain, rng) or {}
-        subdomain_policy = policy.get("sp") or policy.get("p")
+        health = session.exec(
+            select(DomainHealthSnapshot)
+            .where(DomainHealthSnapshot.domain_id == domain.id)
+            .order_by(DomainHealthSnapshot.checked_at.desc())
+            .limit(1)
+        ).first()
+        if health is not None:
+            for result in health.results or []:
+                if not isinstance(result, dict) or result.get("key") != "dmarc":
+                    continue
+                evidence = result.get("evidence") or {}
+                effective = evidence.get("effective_p")
+                if effective in ("none", "quarantine", "reject"):
+                    subdomain_policy = effective
+                    policy_source = "dmarcbis"
+                break
+        if subdomain_policy is None:
+            policy = _policy_snapshot(session, domain, rng) or {}
+            subdomain_policy = policy.get("sp") or policy.get("p")
+            policy_source = "reports"
         covered = subdomain_policy in ("quarantine", "reject")
         sub_rows = session.exec(
             select(
@@ -749,6 +768,7 @@ def _coverage_detail(session: Session, domain: Optional[Domain], rng: DateRange)
         "reporters": reporters,
         "subdomains": subdomains,
         "subdomain_policy": subdomain_policy,
+        "policy_source": policy_source,
         "pct_timeline": pct_timeline,
         "pct_start": pct_start,
         "pct_latest": pct_latest,
@@ -1195,13 +1215,13 @@ def advise(policy: Optional[dict[str, Any]], summary: dict[str, Any], days: int)
             "value": "quarantine",
             "label": "p=quarantine",
             "state": "active" if p == "quarantine" else "off",
-            "detail": "Quarantine — ramp 25→50→100%",
+            "detail": "Quarantine — apply to all failing mail",
         },
         {
             "value": "reject",
             "label": "p=reject",
             "state": "active" if p == "reject" else "off",
-            "detail": "Enforced — no pct tag, so all failing mail",
+            "detail": "Enforced — all failing mail",
         },
     ]
     pct_enforced = policy.get("pct", 100) == 100
@@ -1217,8 +1237,8 @@ def advise(policy: Optional[dict[str, Any]], summary: dict[str, Any], days: int)
         if not pct_enforced:
             tone, label = "warn", "Partial quarantine"
             advice = (
-                f"Only {policy.get('pct')}% of failing mail is quarantined. Raise pct to 100 once "
-                "the sources below look clean."
+                f"The latest report shows pct={policy.get('pct')}%. pct= was removed in DMARCbis; "
+                "apply quarantine to all failing mail once the sources below look clean."
             )
         elif pct >= 99.0 and failed == 0:
             tone, label = "good", "Quarantine enforced"
@@ -1350,7 +1370,10 @@ def report_detail(session: Session, report_id: int) -> Optional[dict[str, Any]]:
             "domain": report.policy_domain,
             "p": report.policy_p,
             "sp": report.policy_sp,
+            "np": report.policy_np,
             "pct": report.policy_pct,
+            "testing": report.policy_testing,
+            "discovery": report.policy_discovery,
             "adkim": report.policy_adkim,
             "aspf": report.policy_aspf,
             "fo": report.policy_fo,

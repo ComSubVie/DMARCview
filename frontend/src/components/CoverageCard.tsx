@@ -16,7 +16,7 @@ export function CoverageCard({
       <div className="card-head">
         <div>
           <h2 className="card-title">Sending coverage</h2>
-          <p className="card-sub">Reporter gaps, other header-from domains and the policy ramp</p>
+          <p className="card-sub">Reporter gaps, other header-from domains and the effective policy</p>
         </div>
         <Badge tone="info">{coverage.reporters.length} reporter{coverage.reporters.length === 1 ? "" : "s"}</Badge>
       </div>
@@ -48,10 +48,16 @@ export function CoverageCard({
         <div className="coverage-block">
           <div className="coverage-block-head">
             <h3>Other header-from domains</h3>
-            {!allDomains && policy ? <Badge tone={policy === "none" ? "warn" : "neutral"}>sp={policy}</Badge> : null}
+            {!allDomains && policy ? (
+              <Badge tone={policy === "none" ? "warn" : "neutral"}>
+                {coverage.policy_source === "dmarcbis" ? "effective" : "sp"}={policy}
+              </Badge>
+            ) : null}
           </div>
           {allDomains ? (
-            <p className="tiny muted">Select a domain to compare observed header-from domains with its sp= policy.</p>
+            <p className="tiny muted">
+              Select a domain to compare observed header-from domains with its effective policy.
+            </p>
           ) : coverage.subdomains.length === 0 ? (
             <p className="tiny muted">No other header-from domains observed.</p>
           ) : (
@@ -71,9 +77,11 @@ export function CoverageCard({
         </div>
 
         <div className="coverage-block">
-          <h3>Policy ramp</h3>
+          <h3>pct ramp (legacy)</h3>
           {allDomains ? (
-            <p className="tiny muted">Select a domain to see its pct= ramp timeline.</p>
+            <p className="tiny muted">
+              Select a domain to see its legacy pct= timeline. DMARCbis removed pct=.
+            </p>
           ) : coverage.pct_start === null || coverage.pct_latest === null ? (
             <p className="tiny muted">No pct changes observed in this period.</p>
           ) : (

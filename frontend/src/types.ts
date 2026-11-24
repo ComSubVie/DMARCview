@@ -268,6 +268,7 @@ export interface CoverageDetail {
   reporters: ReporterCoverage[];
   subdomains: SubdomainCoverage[];
   subdomain_policy: string | null;
+  policy_source: "dmarcbis" | "reports" | null;
   pct_timeline: PctPoint[];
   pct_start: number | null;
   pct_latest: number | null;
@@ -339,7 +340,10 @@ export interface ReportDetail extends Omit<ReportRow, "aligned_pct" | "policy" |
     domain: string | null;
     p: string | null;
     sp: string | null;
+    np: string | null;
     pct: number | null;
+    testing: string | null;
+    discovery: string | null;
     adkim: string | null;
     aspf: string | null;
     fo: string | null;

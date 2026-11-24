@@ -1,11 +1,12 @@
 # Roadmap
 
-_Rev 11 · 24 November 2026 · retention delivered (v1.7)_
+_Rev 12 · 24 November 2026 · DMARCbis delivered (v1.8)_
 
 v1 answered **"what happened?"**; v1.1 added **"is my configuration correct?"**; v1.2 added
-**"tell me when it changes"**; v1.4 completed **why it changed**; v1.5 added signed read-only
-sharing; v1.6 added export and a sortable fleet; v1.7 adds opt-in retention with raw
-archiving. RUF and platform work remain trigger-based.
+**"tell me when it changes"**; v1.4 completed **why it changed**; v1.5 added sharing; v1.6
+added export/fleet; v1.7 added retention; v1.8 delivers DMARCbis: RFC 9989 tree-walk/PSD
+discovery, a readiness panel, external reporting authorization and effective-policy coverage.
+Next: optional RUF and platform work.
 
 ## Delivered so far
 
@@ -29,7 +30,8 @@ archiving. RUF and platform work remain trigger-based.
 | **Export** | Reports CSV/JSON, sources CSV and TLS CSV with current filters; capped `raw.zip` (500 reports / 200 MB) and export actions in the UI. |
 | **Fleet comparison** | Sortable domain table with volume, alignment, failing sources, last report, TLS success, policy, health and a 14-day sparkline; click-through to the domain. |
 | **Retention** | Opt-in `RETENTION_DAYS`; raw XML/JSON archived to `data/archive/YYYY/MM/` before deleting reports and child rows; dry-run CLI and daily scheduler job. |
-| **Tests** | 90 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage, share links, domain profile, check mute, GeoIP backfill, export, fleet and retention. |
+| **DMARCbis** | RFC 9989 parent/PSD tree walk when a domain has no record of its own; `np=`, `t=`, `psd=` and external `rua/ruf` authorization; report fields `np`, `testing`, `discovery_method`; readiness panel; effective-policy subdomain coverage; deprecation notes for `pct/rf/ri`. Existing author-domain logic is unchanged. |
+| **Tests** | 96 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage, share links, domain profile, check mute, GeoIP backfill, export, fleet, retention, DMARCbis tree walk/PSD, external reporting authorization. |
 
 Known limits: DNSSEC relies on the resolver's AD flag (no chain validation); BIMI checks
 presence only; probes need outbound port 25; alert rules are global (no per-domain overrides
@@ -49,11 +51,10 @@ or mute yet) and failed deliveries are recorded but not retried.
 
 | Phase | Theme | Effort | Status |
 | --- | --- | --- | --- |
-| **4** | Forensic (RUF) reports | 3–4 d | optional / next |
+| **4** | Forensic (RUF) reports | 3–4 d | next / optional |
 | **5** | Platform: Postgres, IMAP, tokens, metrics | 8–10 d | trigger-based |
-| **6b** | DMARCbis readiness | 2–4 d | when the RFC is final |
 
-≈ **13–18 focused engineer-days** remaining, tests included. RUF and platform work are both
+≈ **11–14 focused engineer-days** remaining, tests included. RUF and platform work are both
 optional and can be reordered freely.
 
 ---
@@ -145,14 +146,29 @@ SSO stays parked unless the single-admin decision changes.
 
 ---
 
-## Phase 6b — DMARCbis readiness (2–4 days)
+## Phase 6b — DMARCbis readiness
 
-After the RFC is final:
+The RFCs are final: RFC 9989 (protocol), 9990 (aggregate reporting), 9991 (failure reporting).
 
-- testing flag (`t=`), non-existent-subdomain policy (`np=`), tightened syntax;
-- `pct=` handling and external reporting addresses;
-- a readiness panel comparing live DNS with the stored reports;
-- recommendations only — never automatic DNS changes.
+### Delivered
+
+- Report ingestion stores `np`, `testing` and `discovery_method` (migration `0006`).
+- Health check keeps the existing author-domain path, and only when there is no record does
+  it walk parent labels up to the RFC's eight-query limit.
+- Organizational/PSD selection follows `psd=y`/`psd=n`; `sp=` applies to existing subdomains,
+  `np=` to NXDOMAIN names, and `t=y` reduces the applied policy one level.
+- External `rua=`/`ruf=` destinations are verified with `_report._dmarc.<domain>`.
+- A readiness panel shows record discovery, `np`, `t`, `psd`, deprecated tags and external
+  authorization; the policy advisor no longer recommends a `pct` ramp.
+- Subdomain coverage uses the effective DMARCbis policy from the latest health check, with
+  reported `sp=` as the fallback when no check has run.
+- Deprecated `pct=`, `rf=` and `ri=` are shown as notes; report/browser views expose the new
+  policy fields.
+
+### Remaining
+
+- None for the core specification. Monitor RFC errata and receiver behaviour; RUF remains a
+  separate optional phase.
 
 ---
 

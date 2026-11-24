@@ -185,3 +185,32 @@ def test_epoch_milliseconds_supported():
     <record><row><source_ip>192.0.2.9</source_ip><count>1</count></row></record></feedback>"""
     report = parse_dmarc(xml)
     assert report.date_begin.year == 2026
+
+
+def test_dmarcbis_policy_fields():
+    xml = b"""<feedback>
+      <report_metadata>
+        <org_name>example.org</org_name><email>dmarc@example.org</email>
+        <report_id>dmarcbis-1</report_id>
+        <date_range><begin>1700000000</begin><end>1700086400</end></date_range>
+      </report_metadata>
+      <policy_published>
+        <domain>example.com</domain><p>reject</p><sp>quarantine</sp>
+        <np>none</np><testing>y</testing>
+        <discovery_method>treewalk</discovery_method>
+      </policy_published>
+      <record>
+        <row><source_ip>192.0.2.1</source_ip><count>2</count>
+          <policy_evaluated><disposition>none</disposition><dkim>pass</dkim><spf>pass</spf></policy_evaluated>
+        </row>
+        <identifiers><header_from>example.com</header_from></identifiers>
+        <auth_results>
+          <dkim><domain>example.com</domain><result>pass</result></dkim>
+          <spf><domain>example.com</domain><result>pass</result></spf>
+        </auth_results>
+      </record>
+    </feedback>"""
+    report = parse_dmarc(xml)
+    assert report.policy_np == "none"
+    assert report.policy_testing == "y"
+    assert report.policy_discovery == "treewalk"

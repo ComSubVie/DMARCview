@@ -59,7 +59,7 @@ docker build -t dmarcview .
 | `backend/app/share.py` | Share-token signing, public payload shaping, storage helpers |
 | `backend/app/retention.py` | Raw archiving and opt-in report pruning |
 | `backend/app/models.py` | SQLModel schema — the source of truth for Alembic |
-| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute) |
+| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute, `0006` DMARCbis fields) |
 | `frontend/src/` | `pages/`, `components/`, `state.tsx`, `api.ts`, `types.ts`, `styles.css` |
 | `samples/` | Hand-written CRLF `.eml` fixtures used by the test suite |
 | `docs/` | Roadmap and screenshots |
@@ -97,6 +97,15 @@ Checks receive injected `dns`/`http` clients; tests must use fakes, never the ne
 
 **TLS probes verify certificates via certifi** (interpreter CA stores are often stale). They
 never authenticate, never send mail, and only connect to MX hosts plus configured targets.
+
+**External rua=/ruf= destinations require _report._dmarc authorization.** The DMARC check
+queries `_report._dmarc.<destination>` for destinations outside the policy domain and reports
+an unauthorized warning; keep this read-only and subject to the same fake-DNS tests.
+
+**DMARCbis policy discovery is additive.** `check_dmarc` keeps the author-domain behaviour;
+only when `_dmarc.<domain>` has no valid record does `health/dmarcbis.py` walk parents (max
+eight queries), select the org/PSD record via `psd=`, apply `sp=`/`np=`/`t=`, and report an
+inherited warning. Do not replace the author path with the tree walk.
 
 **Sender identities group by envelope/header domain plus external DKIM domain, not by IP.**
 The same IP can send for several recipient domains (and one ESP rotates many IPs), so
@@ -174,8 +183,8 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 ## Roadmap
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
-the user asks for them. Export, fleet comparison and retention are delivered; the remaining
-RUF and platform slices are trigger-based.
+the user asks for them. Export, fleet comparison, retention and DMARCbis are delivered; the
+remaining RUF and platform slices are optional/trigger-based.
 
 ## Security expectations
 

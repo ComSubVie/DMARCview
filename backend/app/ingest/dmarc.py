@@ -49,7 +49,10 @@ class DmarcReport:
     policy_domain: str
     policy_p: Optional[str] = None
     policy_sp: Optional[str] = None
+    policy_np: Optional[str] = None
     policy_pct: Optional[int] = None
+    policy_testing: Optional[str] = None
+    policy_discovery: Optional[str] = None
     policy_adkim: Optional[str] = None
     policy_aspf: Optional[str] = None
     policy_fo: Optional[str] = None
@@ -187,7 +190,10 @@ def parse_dmarc(data: bytes) -> DmarcReport:
         policy_domain=policy_domain,
         policy_p=_text(published, "p"),
         policy_sp=_text(published, "sp") or _text(published, "p"),
+        policy_np=_text(published, "np"),
         policy_pct=pct,
+        policy_testing=_text(published, "testing") or _text(published, "t"),
+        policy_discovery=_text(published, "discovery_method") or _text(published, "discovery-method"),
         policy_adkim=_text(published, "adkim"),
         policy_aspf=_text(published, "aspf"),
         policy_fo=_text(published, "fo"),

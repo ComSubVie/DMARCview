@@ -108,7 +108,10 @@ def reports_json(
                 else 0,
                 "policy_p": report.policy_p,
                 "policy_sp": report.policy_sp,
+                "policy_np": report.policy_np,
                 "policy_pct": report.policy_pct,
+                "policy_testing": report.policy_testing,
+                "policy_discovery": report.policy_discovery,
                 "source": report.source,
             }
         )
@@ -149,7 +152,10 @@ def reports_csv(
                 else 0,
                 report.policy_p,
                 report.policy_sp,
+                report.policy_np,
                 report.policy_pct,
+                report.policy_testing,
+                report.policy_discovery,
                 report.source,
             ]
             for report, domain_row in rows
@@ -167,7 +173,10 @@ def reports_csv(
             "aligned_pct",
             "policy_p",
             "policy_sp",
+            "policy_np",
             "policy_pct",
+            "policy_testing",
+            "policy_discovery",
             "source",
         ],
     )

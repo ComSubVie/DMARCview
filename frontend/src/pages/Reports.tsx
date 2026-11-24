@@ -79,6 +79,11 @@ function ReportDrawer({ id, onClose }: { id: number; onClose: () => void }) {
             <Badge tone="neutral">p={report.policy.p}</Badge>
             <Badge tone="neutral">sp={report.policy.sp ?? "—"}</Badge>
             <Badge tone="neutral">pct={report.policy.pct ?? 100}</Badge>
+            {report.policy.np ? <Badge tone="neutral">np={report.policy.np}</Badge> : null}
+            {report.policy.testing ? <Badge tone="neutral">t={report.policy.testing}</Badge> : null}
+            {report.policy.discovery ? (
+              <Badge tone="neutral">discovery={report.policy.discovery}</Badge>
+            ) : null}
             <Badge tone="neutral">adkim={report.policy.adkim ?? "r"}</Badge>
             <Badge tone="neutral">aspf={report.policy.aspf ?? "r"}</Badge>
             <CopyButton

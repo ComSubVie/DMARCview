@@ -64,7 +64,10 @@ class Report(SQLModel, table=True):
 
     policy_p: Optional[str] = Field(default=None, max_length=32)
     policy_sp: Optional[str] = Field(default=None, max_length=32)
+    policy_np: Optional[str] = Field(default=None, max_length=32)
     policy_pct: Optional[int] = Field(default=None)
+    policy_testing: Optional[str] = Field(default=None, max_length=8)
+    policy_discovery: Optional[str] = Field(default=None, max_length=32)
     policy_adkim: Optional[str] = Field(default=None, max_length=16)
     policy_aspf: Optional[str] = Field(default=None, max_length=16)
     policy_fo: Optional[str] = Field(default=None, max_length=32)

@@ -16,6 +16,151 @@ import { dateTime, relativeTime } from "../lib/format";
 import { useData } from "../state";
 import type { DomainHealth, FleetHealthItem, HealthCheckResult } from "../types";
 
+type ExternalDestination = {
+  kind: string;
+  domain: string;
+  external: boolean;
+  authorized: boolean;
+  query: string | null;
+};
+
+type DmarcbisEvidence = {
+  record?: string;
+  discovery_method?: string;
+  policy_domain?: string;
+  org_domain?: string;
+  psd_domain?: string | null;
+  effective_p?: string;
+  np?: string;
+  testing?: string;
+  psd?: string;
+  deprecated_tags?: string[];
+  external_destinations?: ExternalDestination[];
+};
+
+function DmarcbisCard({ result, domain }: { result: HealthCheckResult; domain: string }) {
+  const meta = statusMeta[result.status];
+  const evidence = result.evidence as DmarcbisEvidence;
+  const inherited = evidence.discovery_method === "treewalk";
+  const hasRecord = typeof evidence.record === "string" && evidence.record.length > 0;
+  const np = evidence.np ?? "";
+  const testing = evidence.testing ?? "";
+  const psd = evidence.psd ?? "";
+  const validPolicy = (value: string) => ["none", "quarantine", "reject"].includes(value);
+  const deprecated = evidence.deprecated_tags ?? [];
+  const external = (evidence.external_destinations ?? []).filter((item) => item.external);
+  const unauthorized = external.filter((item) => !item.authorized);
+  const items = [
+    {
+      label: "Policy record",
+      value: !hasRecord
+        ? "No record"
+        : inherited
+          ? `Inherited from ${evidence.policy_domain ?? "parent"}`
+          : "Published at this domain",
+      tone: !hasRecord
+        ? result.status === "unknown"
+          ? ("neutral" as const)
+          : ("bad" as const)
+        : inherited
+          ? ("info" as const)
+          : ("good" as const),
+      detail: !hasRecord
+        ? result.status === "unknown"
+          ? "DNS result unavailable; run the check again"
+          : "No valid _dmarc record was found"
+        : inherited
+          ? `Org ${evidence.org_domain ?? "—"}${evidence.psd_domain ? ` · PSD ${evidence.psd_domain}` : ""}`
+          : "Author-domain record wins",
+    },
+    {
+      label: "np= non-existent subdomains",
+      value: np ? `np=${np}` : "Not set",
+      tone: np ? (validPolicy(np) ? ("good" as const) : ("warn" as const)) : ("neutral" as const),
+      detail: np ? "Applies when the author domain is NXDOMAIN" : "Falls back to sp= then p=",
+    },
+    {
+      label: "t= testing mode",
+      value: testing === "y" ? "Testing" : "Off",
+      tone: testing === "y" ? ("warn" as const) : ("good" as const),
+      detail:
+        testing === "y"
+          ? `Applied policy reduced to ${evidence.effective_p ?? "one level below"}`
+          : "Policy applied as published",
+    },
+    {
+      label: "psd= boundary",
+      value: psd ? `psd=${psd}` : "Not set",
+      tone: psd
+        ? psd === "y" || psd === "n"
+          ? ("good" as const)
+          : ("warn" as const)
+        : ("neutral" as const),
+      detail: psd ? "Explicit public-suffix boundary" : "Only needed on PSD records",
+    },
+    {
+      label: "Deprecated tags",
+      value: deprecated.length > 0 ? deprecated.join(", ") : "None",
+      tone: deprecated.length > 0 ? ("warn" as const) : ("good" as const),
+      detail:
+        deprecated.length > 0
+          ? "Removed in RFC 9989; receivers may ignore them"
+          : "No pct=, rf= or ri=",
+    },
+    {
+      label: "External reporting",
+      value:
+        unauthorized.length > 0
+          ? `${unauthorized.length} unauthorized`
+          : external.length > 0
+            ? "Authorized"
+            : "None",
+      tone: unauthorized.length > 0 ? ("bad" as const) : ("good" as const),
+      detail:
+        unauthorized.length > 0
+          ? unauthorized.map((item) => item.domain).join(", ")
+          : external.length > 0
+            ? "External rua=/ruf= verified"
+            : "All report destinations are internal",
+    },
+  ];
+  return (
+    <section className="card dmarcbis-card">
+      <div className="card-head">
+        <div>
+          <h2 className="card-title">DMARCbis readiness</h2>
+          <p className="card-sub">
+            {domain} · RFC 9989 discovery, RFC 9990/9991 reporting
+          </p>
+        </div>
+        <Badge tone={meta.tone}>{meta.label}</Badge>
+      </div>
+      <div className="dmarcbis-grid">
+        {items.map((item) => (
+          <div className="dmarcbis-item" key={item.label}>
+            <div className="dmarcbis-item-head">
+              <span className="dmarcbis-label">{item.label}</span>
+              <Badge tone={item.tone}>{item.value}</Badge>
+            </div>
+            <p className="tiny muted">{item.detail}</p>
+          </div>
+        ))}
+      </div>
+      <p className="tiny muted dmarcbis-foot">
+        The health check is read-only. See{" "}
+        <a href="https://www.rfc-editor.org/rfc/rfc9989" target="_blank" rel="noreferrer">
+          RFC 9989
+        </a>{" "}
+        for the policy tags and{" "}
+        <a href="https://www.rfc-editor.org/rfc/rfc9990" target="_blank" rel="noreferrer">
+          RFC 9990
+        </a>{" "}
+        for reporting.
+      </p>
+    </section>
+  );
+}
+
 function CheckCard({ result }: { result: HealthCheckResult }) {
   const meta = statusMeta[result.status];
   return (
@@ -436,6 +581,7 @@ export function HealthPage() {
   const meta = overallMeta[health.overall];
   const core = health.results.filter((result) => result.core);
   const optional = health.results.filter((result) => !result.core);
+  const dmarc = health.results.find((result) => result.key === "dmarc");
 
   return (
     <div className="fade-in">
@@ -504,6 +650,8 @@ export function HealthPage() {
           <CheckCard key={result.key} result={result} />
         ))}
       </div>
+
+      {dmarc ? <DmarcbisCard result={dmarc} domain={health.domain} /> : null}
 
       {optional.length > 0 ? (
         <>

@@ -53,6 +53,17 @@ class FakeDns(BaseDnsClient):
         return Lookup(values=tuple(values), exists=True, ad=self.ad)
 
 
+class NxDomainDns(FakeDns):
+    def __init__(self, records, nxdomain_names, ad=False):
+        super().__init__(records, ad=ad)
+        self.nxdomain_names = set(nxdomain_names)
+
+    async def lookup(self, name, rtype):
+        if name.lower().rstrip(".") in self.nxdomain_names:
+            return Lookup(exists=False, nxdomain=True, ad=self.ad)
+        return await super().lookup(name, rtype)
+
+
 class FakeFetcher(BaseFetcher):
     def __init__(self, responses: dict[str, FetchResult]):
         self.responses = responses
@@ -142,6 +153,103 @@ async def test_p_none_warns_but_is_not_a_failure():
     by_key = {result.key: result for result in report.results}
     assert by_key["dmarc"].status is Status.WARN
     assert report.overall == "warn"
+
+
+@pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_dmarc_inherits_parent_policy_by_treewalk():
+    records = {
+        ("_dmarc.tgm.rocks", "TXT"): [
+            "v=DMARC1; p=reject; sp=quarantine; rua=mailto:dmarc@tgm.rocks"
+        ]
+    }
+    from app.health.checks import CheckContext, check_dmarc
+
+    result = await check_dmarc(
+        CheckContext(domain="mail.tgm.rocks", dns=FakeDns(records), http=FakeFetcher({}))
+    )
+    assert result.status is Status.WARN
+    assert "Inherited" in result.summary
+    assert result.evidence["policy_domain"] == "tgm.rocks"
+    assert result.evidence["discovery_method"] == "treewalk"
+    assert result.evidence["effective_p"] == "quarantine"
+
+
+@pytest.mark.asyncio
+async def test_dmarc_np_applies_to_nonexistent_subdomain():
+    records = {
+        ("_dmarc.tgm.rocks", "TXT"): [
+            "v=DMARC1; p=reject; sp=quarantine; np=none; rua=mailto:dmarc@tgm.rocks"
+        ]
+    }
+    from app.health.checks import CheckContext, check_dmarc
+
+    dns = NxDomainDns(records, {"gone.tgm.rocks"})
+    result = await check_dmarc(
+        CheckContext(domain="gone.tgm.rocks", dns=dns, http=FakeFetcher({}))
+    )
+    assert result.status is Status.WARN
+    assert result.evidence["author_exists"] is False
+    assert result.evidence["effective_p"] == "none"
+
+
+@pytest.mark.asyncio
+async def test_dmarc_testing_mode_reduces_policy():
+    records = {
+        ("_dmarc.tgm.rocks", "TXT"): [
+            "v=DMARC1; p=reject; t=y; rua=mailto:dmarc@tgm.rocks"
+        ]
+    }
+    from app.health.checks import CheckContext, check_dmarc
+
+    result = await check_dmarc(
+        CheckContext(domain="tgm.rocks", dns=FakeDns(records), http=FakeFetcher({}))
+    )
+    assert result.status is Status.WARN
+    assert result.evidence["effective_p"] == "quarantine"
+    assert "testing" in result.summary
+
+
+@pytest.mark.asyncio
+async def test_dmarc_psd_treewalk_selects_child_of_psd():
+    records = {
+        ("_dmarc.example.com", "TXT"): [
+            "v=DMARC1; p=reject; psd=y; rua=mailto:dmarc@example.com"
+        ]
+    }
+    from app.health.checks import CheckContext, check_dmarc
+
+    result = await check_dmarc(
+        CheckContext(domain="a.mail.example.com", dns=FakeDns(records), http=FakeFetcher({}))
+    )
+    assert result.status is Status.WARN
+    assert result.evidence["policy_domain"] == "example.com"
+    assert result.evidence["psd_domain"] == "example.com"
+    assert result.evidence["org_domain"] == "mail.example.com"
+
+
+@pytest.mark.asyncio
+async def test_dmarc_external_report_destination_requires_authorization():
+    records = {
+        ("_dmarc.tgm.rocks", "TXT"): [
+            "v=DMARC1; p=reject; rua=mailto:dmarc@reports.example"
+        ]
+    }
+    from app.health.checks import CheckContext, check_dmarc
+
+    blocked = await check_dmarc(
+        CheckContext(domain="tgm.rocks", dns=FakeDns(records), http=FakeFetcher({}))
+    )
+    assert blocked.status is Status.WARN
+    assert any("not authorized" in detail for detail in blocked.details)
+    assert blocked.evidence["external_destinations"][0]["authorized"] is False
+
+    records[("_report._dmarc.reports.example", "TXT")] = ["v=DMARC1;"]
+    allowed = await check_dmarc(
+        CheckContext(domain="tgm.rocks", dns=FakeDns(records), http=FakeFetcher({}))
+    )
+    assert allowed.status is Status.PASS
+    assert allowed.evidence["external_destinations"][0]["authorized"] is True
 
 
 @pytest.mark.asyncio

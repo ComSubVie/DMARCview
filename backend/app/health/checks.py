@@ -12,6 +12,7 @@ from typing import Awaitable, Callable, Optional
 
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
+from .dmarcbis import VALID_POLICIES, discover_inherited_policy
 from .dns import BaseDnsClient
 from .http import BaseFetcher
 from .selectors import build_candidates
@@ -75,6 +76,142 @@ def _result(
 
 
 # --------------------------------------------------------------------- DMARC
+def _mailto_domain(uri: str) -> Optional[str]:
+    value = uri.strip()
+    if not value.lower().startswith("mailto:"):
+        return None
+    address = value[7:].split("!", 1)[0].strip()
+    if "@" not in address:
+        return None
+    return address.rsplit("@", 1)[1].strip().strip(".").lower() or None
+
+
+def _destinations(value: str) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for uri in (value or "").split(","):
+        domain = _mailto_domain(uri)
+        if domain:
+            out.append((uri.strip(), domain))
+    return out[:10]
+
+
+async def _report_authorizations(
+    dns: BaseDnsClient, policy_domain: str, rua: str, ruf: str
+) -> list[dict]:
+    """RFC 9990/9991 external destination verification for rua=/ruf=."""
+    policy_domain = policy_domain.strip(".").lower()
+    results: list[dict] = []
+    for kind, value in (("rua", rua), ("ruf", ruf)):
+        for uri, domain in _destinations(value):
+            internal = domain == policy_domain or domain.endswith("." + policy_domain)
+            item = {
+                "kind": kind,
+                "uri": uri,
+                "domain": domain,
+                "external": not internal,
+                "authorized": True,
+                "record": None,
+                "error": None,
+                "query": None,
+            }
+            if not internal:
+                query = f"_report._dmarc.{domain}"
+                item["query"] = query
+                lookup = await dns.txt(query)
+                item["error"] = lookup.error
+                valid = [
+                    record.strip()
+                    for record in lookup.values
+                    if record.strip().lower().startswith("v=dmarc1")
+                ]
+                item["authorized"] = bool(valid)
+                item["record"] = valid[0] if valid else None
+            results.append(item)
+    return results
+
+
+def _effective_policy(policy: str, testing: str) -> str:
+    if testing != "y":
+        return policy
+    return {"reject": "quarantine", "quarantine": "none"}.get(policy, policy)
+
+
+async def _inherited_result(ctx: CheckContext, inherited) -> CheckResult:
+    tags = inherited.tags
+    p = tags.get("p", "").lower()
+    sp = (tags.get("sp") or p).lower()
+    details = [
+        f"No DMARC record at _dmarc.{ctx.domain}",
+        f"Policy found at _dmarc.{inherited.policy_domain} via tree walk",
+        f"org={inherited.org_domain}"
+        + (f" · psd={inherited.psd_domain}" if inherited.psd_domain else ""),
+        f"p={p or 'missing'} · sp={sp or 'missing'} · np={inherited.np or 'missing'}",
+        f"effective={inherited.effective_p or 'none'}"
+        + (f" · t={inherited.testing}" if inherited.testing else ""),
+        f"rua={tags.get('rua') or 'none'}",
+    ]
+    if inherited.queries:
+        details.append("Tree walk: " + " → ".join(inherited.queries))
+    evidence = {
+        "record": inherited.record,
+        "p": p,
+        "sp": sp,
+        "np": inherited.np,
+        "testing": inherited.testing,
+        "psd": (tags.get("psd") or "").lower(),
+        "effective_p": inherited.effective_p,
+        "policy_domain": inherited.policy_domain,
+        "org_domain": inherited.org_domain,
+        "psd_domain": inherited.psd_domain,
+        "discovery_method": "treewalk",
+        "author_exists": inherited.author_exists,
+        "rua": tags.get("rua", ""),
+    }
+    if inherited.effective_p not in VALID_POLICIES:
+        return _result(
+            "dmarc",
+            "DMARC",
+            Status.FAIL,
+            "Inherited DMARC record has no valid policy",
+            core=True,
+            details=details + inherited.warnings,
+            remediation="Fix p= (and sp=/np=) on the inherited DMARC record.",
+            evidence=evidence,
+        )
+    external = await _report_authorizations(
+        ctx.dns, inherited.policy_domain, tags.get("rua", ""), tags.get("ruf", "")
+    )
+    warnings = [
+        f"No record at _dmarc.{ctx.domain}; inheriting from _dmarc.{inherited.policy_domain}."
+    ] + inherited.warnings
+    for item in external:
+        if item["external"] and not item["authorized"]:
+            warnings.append(
+                f"External {item['kind']} destination {item['domain']} is not authorized "
+                f"(publish {item['query']} TXT v=DMARC1)."
+            )
+    evidence["external_destinations"] = external
+    evidence["deprecated_tags"] = [
+        tag for tag in ("pct", "rf", "ri") if tag in tags
+    ]
+    reported = (ctx.reported_policy or {}).get("p")
+    if reported and reported != p:
+        warnings.append(f"Receivers report p={reported}, inherited DNS says p={p}.")
+    return _result(
+        "dmarc",
+        "DMARC",
+        Status.WARN,
+        f"Inherited p={p} (effective {inherited.effective_p}) from {inherited.policy_domain}",
+        core=True,
+        details=details + warnings,
+        remediation=(
+            f"Publish a record at _dmarc.{ctx.domain} if this subdomain needs its own policy. "
+            "Otherwise confirm the inherited policy is intended."
+        ),
+        evidence=evidence,
+    )
+
+
 async def check_dmarc(ctx: CheckContext) -> CheckResult:
     lookup = await ctx.dns.txt(f"_dmarc.{ctx.domain}")
     if lookup.error:
@@ -82,6 +219,9 @@ async def check_dmarc(ctx: CheckContext) -> CheckResult:
 
     records = [value.strip() for value in lookup.values if value.strip().lower().startswith("v=dmarc1")]
     if not records:
+        inherited = await discover_inherited_policy(ctx.dns, ctx.domain)
+        if inherited is not None:
+            return await _inherited_result(ctx, inherited)
         return _result(
             "dmarc",
             "DMARC",
@@ -104,36 +244,84 @@ async def check_dmarc(ctx: CheckContext) -> CheckResult:
 
     tags = parse_tags(records[0])
     p = tags.get("p", "").lower()
-    sp = tags.get("sp", p).lower()
+    sp = (tags.get("sp") or p).lower()
+    np = (tags.get("np") or "").lower()
+    testing = (tags.get("t") or "").lower()
+    psd = (tags.get("psd") or "").lower()
     pct = tags.get("pct", "100")
     rua = tags.get("rua", "")
+    effective = _effective_policy(p, testing)
 
     details = [
         f"p={p or 'missing'}",
         f"sp={sp or 'missing'}",
-        f"pct={pct}",
+        f"np={np or 'missing'}",
+        f"pct={pct} (legacy)",
+        f"t={testing or 'n'} · psd={psd or 'unset'}",
         f"adkim={tags.get('adkim', 'r')} · aspf={tags.get('aspf', 'r')}",
         f"rua={rua or 'none'}",
     ]
-    evidence = {"record": records[0], "p": p, "sp": sp, "pct": pct, "rua": rua}
+    notes: list[str] = []
+    if "pct" in tags:
+        notes.append("pct= is removed in DMARCbis; legacy receivers may still apply it.")
+    if "rf" in tags:
+        notes.append("rf= is removed in DMARCbis.")
+    if "ri" in tags:
+        notes.append("ri= is removed in DMARCbis.")
+    if np:
+        notes.append("np= applies to non-existent subdomains; it has no effect on the author domain.")
+    evidence = {
+        "record": records[0],
+        "p": p,
+        "sp": sp,
+        "np": np,
+        "pct": pct,
+        "testing": testing,
+        "psd": psd,
+        "effective_p": effective,
+        "discovery_method": "author",
+        "policy_domain": ctx.domain,
+        "org_domain": ctx.domain,
+        "rua": rua,
+    }
 
-    if p not in {"none", "quarantine", "reject"}:
+    if p not in VALID_POLICIES:
         return _result(
             "dmarc",
             "DMARC",
             Status.FAIL,
             "Invalid or missing p= policy",
             core=True,
-            details=details,
+            details=details + notes,
             remediation="Set p=none, p=quarantine or p=reject.",
             evidence=evidence,
         )
 
     warnings: list[str] = []
+    external = await _report_authorizations(ctx.dns, ctx.domain, rua, tags.get("ruf", ""))
+    for item in external:
+        if item["external"] and not item["authorized"]:
+            warnings.append(
+                f"External {item['kind']} destination {item['domain']} is not authorized "
+                f"(publish {item['query']} TXT v=DMARC1)."
+            )
+    evidence["external_destinations"] = external
+    evidence["deprecated_tags"] = [
+        tag for tag in ("pct", "rf", "ri") if tag in tags
+    ]
+
     if not rua:
         warnings.append("No rua= address; you will not receive aggregate reports.")
     if p == "none":
         warnings.append("Policy is p=none: failing mail is still delivered.")
+    if sp and sp not in VALID_POLICIES:
+        warnings.append(f"Invalid sp={sp}; subdomains fall back to p={p}.")
+    if np and np not in VALID_POLICIES:
+        warnings.append(f"Invalid np={np}; non-existent subdomains fall back to p={p}.")
+    if psd and psd not in {"y", "n"}:
+        warnings.append(f"Invalid psd={psd}; expected y or n.")
+    if testing == "y":
+        warnings.append(f"Testing mode t=y reduces the applied policy to {effective}.")
     reported = (ctx.reported_policy or {}).get("p")
     if reported and reported != p:
         warnings.append(f"Receivers report p={reported}, DNS says p={p} — the record changed recently.")
@@ -145,9 +333,9 @@ async def check_dmarc(ctx: CheckContext) -> CheckResult:
             "dmarc",
             "DMARC",
             Status.WARN,
-            f"p={p}" + (f" (pct={pct})" if pct not in {"100", ""} else ""),
+            f"p={p}" + (f" (testing → {effective})" if testing == "y" else ""),
             core=True,
-            details=details + warnings,
+            details=details + notes + warnings,
             remediation=(
                 "Move to p=quarantine, then p=reject, once the sending sources look clean."
                 if p == "none"
@@ -164,7 +352,7 @@ async def check_dmarc(ctx: CheckContext) -> CheckResult:
         Status.PASS,
         f"p={p} · reports to {rua.split(',')[0].strip()}",
         core=True,
-        details=details,
+        details=details + notes,
         evidence=evidence,
     )
 

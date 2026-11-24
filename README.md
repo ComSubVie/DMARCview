@@ -32,8 +32,11 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
   (`certificate-expired`, `starttls-not-supported`, …) and the reporters behind them.
 - **Checks your configuration, not just your reports.** Live DNS checks for DMARC, SPF (with the
   10-lookup limit), DKIM selectors, MX, MTA-STS (policy-id validation), TLS-RPT, DNSSEC and BIMI.
-  Because outbound port 25 is allowed, it also probes MX, submission and IMAP endpoints:
-  STARTTLS, TLS version, certificate chain, hostname, expiry and DANE/TLSA.
+  DMARC policy discovery follows RFC 9989: if a domain has no record, parent/PSD records are
+  found by tree walk, with `sp=`, `np=`, `t=` and `psd=` applied, external `rua=`/`ruf=`
+  destinations verified, and a readiness panel for the current record. Because outbound port
+  25 is allowed, it also probes MX, submission and IMAP endpoints: STARTTLS, TLS version,
+  certificate chain, hostname, expiry and DANE/TLSA.
 - **Tells you when it changes.** Nine alert rules cover compliance drops, new senders, DKIM
   breaks, TLS failures, silent report gaps, volume spikes, policy drift and certificate expiry,
   delivered over SMTP, Telegram, Signal (signal-cli) or a signed webhook.
@@ -406,9 +409,9 @@ Everything below requires the session cookie (obtained via `POST /api/auth/login
 ## Roadmap
 
 v1.2 added alerting over SMTP, Telegram, Signal and webhooks; v1.3 added sender identities
-and period-over-period changes; v1.4 completed analytics; v1.5 added signed read-only share
-links; v1.6 added export and a sortable fleet; v1.7 adds opt-in retention with raw archiving.
-Next: RUF or platform work when triggered. Sequencing, effort estimates and the
+and period-over-period changes; v1.4 completed analytics; v1.5 added sharing; v1.6 added
+export/fleet; v1.7 added retention; v1.8 extends DMARC checks with RFC 9989 tree-walk/PSD
+policy discovery. Next: the remaining DMARCbis readiness UI, RUF or platform work. Sequencing, effort estimates and the
 decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
@@ -417,7 +420,7 @@ decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (90 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (96 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -511,6 +514,23 @@ can be revoked but not recovered.
 - Responses set `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex` and `no-store`, with
   a per-token rate limit.
 - Revoke from the same drawer; the public link fails immediately.
+
+## DMARCbis policy discovery
+
+The DMARC health check keeps the existing `_dmarc.<domain>` path. When no record exists
+there, it performs the RFC 9989 DNS tree walk up to eight labels, selects the organizational
+or PSD record using `psd=`, and applies:
+
+- `sp=` when the author domain exists;
+- `np=` when the domain is NXDOMAIN;
+- `t=y` by reducing reject → quarantine → none.
+
+Inherited policies are reported as a warning with the policy domain, organizational domain,
+PSD, effective policy and the tree-walk queries. External `rua=`/`ruf=` destinations are
+checked for their `_report._dmarc.<domain>` authorization. Reports store `np`, `testing` and
+`discovery_method`; deprecated `pct=`, `rf=` and `ri=` are flagged. The Health page shows a
+DMARCbis readiness panel, and subdomain coverage uses the effective policy once a health check
+has run. Existing authored records keep their previous pass/warn/fail behaviour.
 
 ## Export & fleet
 
