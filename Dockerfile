@@ -32,6 +32,7 @@ COPY backend/app ./app
 COPY backend/alembic.ini ./alembic.ini
 COPY backend/migrations ./migrations
 COPY --from=web /web/dist ./frontend/dist
+COPY LICENSE THIRD_PARTY_NOTICES.md ./
 
 RUN chown -R app:app /app \
     && mkdir -p /data/geoip \

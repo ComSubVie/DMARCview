@@ -339,6 +339,9 @@ estimates and the decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.m
 
 ## Development
 
+[AGENTS.md](AGENTS.md) is the contributor guide (human or AI): architecture map, commands,
+invariants, the definition of done and the release process. `CLAUDE.md` imports it.
+
 ```bash
 # backend tests (64 tests: parsers, ingestion, API, auth, mocked JMAP, health checks and probes)
 cd backend && ../.venv/bin/pytest -q
@@ -439,3 +442,14 @@ archive size and growth so the decision can be made with numbers.
 
 Screenshots use a generated demo dataset (`scripts/demo_seed.py`); no real domain data is
 included.
+
+## Provenance
+
+The initial implementation was generated with AI assistance and reviewed by the maintainer.
+[AGENTS.md](AGENTS.md) records the conventions and the traps discovered during that work.
+
+## License
+
+MIT © 2026 Markus Schabel. See [LICENSE](LICENSE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the bundled fonts (SIL OFL 1.1) and the
+optional DB-IP data (CC BY 4.0).
