@@ -1,5 +1,5 @@
-import { Check, Minus, X } from "lucide-react";
-import type { ReactNode } from "react";
+import { Check, Copy, Minus, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { checkLabel } from "../lib/format";
 import type { CheckState } from "../types";
 
@@ -141,4 +141,65 @@ export function DashboardSkeleton() {
       </div>
     </div>
   );
+}
+
+
+export function CopyButton({
+  value,
+  label = "Copy",
+  className = "",
+}: {
+  value: string;
+  label?: string;
+  className?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        fallbackCopy(value);
+      }
+    } catch {
+      fallbackCopy(value);
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <button
+      type="button"
+      className={`copy-btn ${copied ? "copied" : ""} ${className}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        void copy();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.stopPropagation();
+      }}
+      title={copied ? "Copied" : label}
+      aria-label={copied ? "Copied" : label}
+    >
+      {copied ? <Check size={13} strokeWidth={2.6} /> : <Copy size={13} />}
+    </button>
+  );
+}
+
+function fallbackCopy(value: string) {
+  const area = document.createElement("textarea");
+  area.value = value;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.top = "-1000px";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  try {
+    document.execCommand("copy");
+  } finally {
+    document.body.removeChild(area);
+  }
 }

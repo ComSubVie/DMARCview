@@ -1,7 +1,7 @@
 import { ArrowRight, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { Advice, Policy, PolicyOverviewItem } from "../types";
-import { Badge } from "./ui";
+import { Badge, CopyButton } from "./ui";
 
 export function PolicyCard({
   policy,
@@ -76,6 +76,7 @@ export function PolicyCard({
   const tone = advice.tone === "good" ? "good" : advice.tone === "warn" ? "warn" : "info";
   const statusLabel =
     policy.p === "reject" ? "Enforced" : policy.p === "quarantine" ? "Quarantine" : "Monitoring";
+  const policyText = policy.label ?? `p=${policy.p ?? "none"}`;
 
   return (
     <section className="card policy-card">
@@ -90,7 +91,10 @@ export function PolicyCard({
         <h3>{advice.label}</h3>
 
         <div className="policy-current">Current published policy</div>
-        <div className="policy-code">{policy.label ?? `p=${policy.p ?? "none"}`}</div>
+        <div className="policy-code">
+          <span>{policyText}</span>
+          <CopyButton value={policyText} label="Copy DMARC policy" />
+        </div>
 
         <div className="policy-options">
           {advice.options.map((option) => (

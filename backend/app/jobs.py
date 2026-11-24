@@ -19,6 +19,7 @@ from sqlmodel import Session, select
 from .config import get_settings
 from .db import get_engine
 from .alerts.service import evaluate as evaluate_alerts
+from .geoip import get_asn_resolver
 from .health.dns import get_dns_client
 from .health.service import run_and_store_health, run_and_store_probes
 from .models import Domain, IpMeta, JobRun, SourceRecord, utcnow
@@ -92,30 +93,52 @@ async def job_ptr_enrichment() -> dict:
         # SQLModel returns scalars for a single-column select; be tolerant of
         # drivers/versions that hand back one-element rows instead.
         ips = [row if isinstance(row, str) else str(row[0]) for row in rows]
-        known = {row.ip for row in session.exec(select(IpMeta)).all()}
-    todo = [ip for ip in ips if ip not in known][:250]
+        metas = {row.ip: row for row in session.exec(select(IpMeta)).all()}
+
+    asn_resolver = get_asn_resolver()
+    needs: dict[str, dict[str, bool]] = {}
+    for ip in ips:
+        meta = metas.get(ip)
+        needs_ptr = meta is None
+        needs_asn = asn_resolver.available and (meta is None or meta.asn is None)
+        if needs_ptr or needs_asn:
+            needs[ip] = {"ptr": needs_ptr, "asn": needs_asn}
+    todo = list(needs)[:250]
     if not todo:
         return {"looked_up": 0, "pending": 0}
 
     dns = get_dns_client()
     semaphore = asyncio.Semaphore(10)
 
-    async def lookup(ip: str) -> tuple[str, Optional[str]]:
+    async def lookup(ip: str) -> tuple[str, Optional[str], Optional[int], Optional[str]]:
         async with semaphore:
-            try:
-                answer = await dns.ptr(ip)
-            except Exception:  # noqa: BLE001
-                return ip, None
-            if answer.values:
-                return ip, answer.values[0][:255]
-            return ip, None
+            ptr = None
+            if needs[ip]["ptr"]:
+                try:
+                    answer = await dns.ptr(ip)
+                except Exception:  # noqa: BLE001
+                    answer = None
+                if answer and answer.values:
+                    ptr = answer.values[0][:255]
+            asn, asn_org = asn_resolver.lookup(ip) if needs[ip]["asn"] else (None, None)
+            return ip, ptr, asn, asn_org
 
     results = await asyncio.gather(*(lookup(ip) for ip in todo))
     with Session(get_engine()) as session:
-        for ip, ptr in results:
-            session.add(IpMeta(ip=ip, ptr=ptr, updated_at=utcnow()))
+        for ip, ptr, asn, asn_org in results:
+            meta = session.get(IpMeta, ip)
+            if meta is None:
+                meta = IpMeta(ip=ip, ptr=ptr, asn=asn, asn_org=asn_org, updated_at=utcnow())
+            else:
+                if ptr:
+                    meta.ptr = ptr
+                if needs[ip]["asn"]:
+                    meta.asn = asn
+                    meta.asn_org = asn_org
+                meta.updated_at = utcnow()
+            session.add(meta)
         session.commit()
-    return {"looked_up": len(results), "pending": max(0, len(ips) - len(known) - len(results))}
+    return {"looked_up": len(results), "pending": max(0, len(needs) - len(results))}
 
 
 @dataclass(frozen=True)

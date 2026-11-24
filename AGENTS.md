@@ -54,7 +54,7 @@ docker build -t dmarcview .
 | `backend/app/routers/` | `auth`, `api` (dashboard/reports/tls), `ingest`, `health`, `alerts` |
 | `backend/app/jobs.py` | In-process scheduler (health checks, probes, PTR enrichment, alert evaluation) |
 | `backend/app/models.py` | SQLModel schema — the source of truth for Alembic |
-| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts) |
+| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN) |
 | `frontend/src/` | `pages/`, `components/`, `state.tsx`, `api.ts`, `types.ts`, `styles.css` |
 | `samples/` | Hand-written CRLF `.eml` fixtures used by the test suite |
 | `docs/` | Roadmap and screenshots |
@@ -90,6 +90,11 @@ Checks receive injected `dns`/`http` clients; tests must use fakes, never the ne
 
 **TLS probes verify certificates via certifi** (interpreter CA stores are often stale). They
 never authenticate, never send mail, and only connect to MX hosts plus configured targets.
+
+**Sender identities group by envelope/header domain plus external DKIM domain, not by IP.**
+The same IP can send for several recipient domains (and one ESP rotates many IPs), so
+grouping on IP alone merges unrelated senders — there is a regression test for this. ASN/PTR
+is display context, not part of the identity key.
 
 **Alerts dedupe on `(rule, domain, dedupe_key)` while an incident is open.** A new episode is
 suppressed until the rule's cooldown passes; when the condition clears the open event is
@@ -149,7 +154,9 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 ## Roadmap
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
-the user asks for them. The next planned slice is share links and export.
+the user asks for them. The analytics foundation (identities + period changes) is delivered;
+the next planned slice is the analytics remainder (coverage + anomaly scoring), then share
+links and export.
 
 ## Security expectations
 

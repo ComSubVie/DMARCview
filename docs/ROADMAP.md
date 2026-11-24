@@ -1,178 +1,159 @@
 # Roadmap
 
-_Rev 4 · 24 November 2026 · after shipping alerting_
+_Rev 6 · 24 November 2026 · analytics foundation delivered_
 
 v1 answered **"what happened?"**; v1.1 added **"is my configuration correct?"**; v1.2 adds
-**"tell me when it changes"**. Next comes read-only sharing and export, then retention.
+**"tell me when it changes"**. The analytics foundation now goes deeper on **why it changed**:
+sender identities and period-over-period deltas. Coverage and anomaly scoring remain before
+distribution (share links/export).
 
 ## Delivered so far
 
 | Area | What shipped |
 | --- | --- |
-| **Migrations** | Alembic baseline (`0001`) plus `0002` for the new tables. v1 databases are stamped automatically and upgraded in place on start. `python -m app.cli migrate`. |
-| **Scheduler** | In-process job runner with overlap guards, jitter, initial delay and `job_runs` history. Jobs: health checks, transport probes, PTR enrichment, alert evaluation. No Redis/Celery. |
-| **Domain settings** | Per-domain DKIM selectors, extra probe targets, expected report interval, check toggle — with a settings form on the Health page. |
-| **Domain health** | Live checks for DMARC (incl. drift vs. reports), SPF (recursive, 10-lookup/2-void limits), DKIM (selectors, key size), MX, MTA-STS (policy fetch, mode/mx/max_age), TLS-RPT, DNSSEC (AD), BIMI. Snapshot history, dashboard card, full Health page. |
-| **Transport probes** | MX :25 (STARTTLS) plus configurable submission/IMAP/HTTPS targets. Chain and hostname verification, expiry days, TLS version/cipher, DANE/TLSA matching. No auth, no mail sent. |
-| **PTR enrichment** | Reverse DNS for sending IPs, shown under the source in the Sending sources table. |
-| **Storage & backups** | `python -m app.cli backup` (consistent SQLite snapshot, integrity-checked, rotated), storage/growth panel, jobs panel. Retention stays **off by default**. |
-| **Alerting** | Nine rules over reports, health snapshots and probes; hourly + manual evaluation; dedupe/cooldown/resolution; SMTP, Telegram, Signal (signal-cli) and signed webhook channels; editable thresholds; incident history. |
-| **Tests** | 72 backend tests, including every health check against fixtures, probe parsing, a local TLS server, migration upgrade path, the health API, and alert evaluation/dedupe/resolution with mocked delivery. |
+| **Migrations** | Alembic `0001` baseline, `0002` health/probes/jobs/settings, `0003` alerts, `0004` ASN metadata. Existing databases upgrade in place on start; `python -m app.cli migrate`. |
+| **Scheduler** | In-process runner with overlap guards, jitter, initial delay and `job_runs`. Jobs: health checks, transport probes, PTR enrichment, alert evaluation. No Redis/Celery. |
+| **Domain settings** | Per-domain DKIM selectors, extra probe targets, expected report interval, check toggle. |
+| **Domain health** | DMARC (incl. drift vs reports), SPF (10-lookup/2-void), DKIM, MX, MTA-STS, TLS-RPT, DNSSEC, BIMI; snapshot history and Health page. |
+| **Transport probes** | MX :25 STARTTLS plus submission/IMAP/HTTPS targets; chain/hostname/expiry, TLS version/cipher, DANE/TLSA. No auth, no mail sent. |
+| **Alerting** | Nine rules over reports, snapshots and probes; hourly + manual; dedupe/cooldown/resolution; SMTP, Telegram, Signal (signal-cli) and signed webhook; editable thresholds, history and test buttons. |
+| **PTR enrichment** | Reverse DNS for sending IPs, shown under each source. |
+| **Storage & backups** | Consistent SQLite snapshots with rotation, storage/growth panel, jobs panel. Retention stays **off by default**. |
+| **Dashboard polish** | Report-gap banner when a domain misses its expected interval; copy buttons for DMARC/TLS policy strings and report IDs. |
+| **Analytics foundation** | Sender identities grouped by envelope/header domain + external DKIM domain, with ASN/PTR context; DB-IP ASN Lite fetched by default and backfilled into `ip_meta`; "what changed" chips and new-identity list; full identity drawer. |
+| **Tests** | 75 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes. |
 
-Known limits: DNSSEC relies on the resolver's AD flag (no explicit chain validation);
-BIMI verifies presence only; probes require outbound port 25; alert rules are global (no
-per-domain overrides or mute yet) and failed deliveries are recorded but not retried.
+Known limits: DNSSEC relies on the resolver's AD flag (no chain validation); BIMI checks
+presence only; probes need outbound port 25; alert rules are global (no per-domain overrides
+or mute yet) and failed deliveries are recorded but not retried.
 
-## Decisions locked in (24 Nov 2026)
+## Decisions locked in
 
 | # | Decision | Consequence |
 | --- | --- | --- |
-| 1 | **SMTP** alerts, **Telegram** and **Signal** as extra channels | Delivered: SMTP, Telegram, Signal (via a `signal-cli` sidecar) and a signed webhook. |
-| 2 | App **may probe MX on 25** (and other mail ports) | Delivered: live STARTTLS, certificate and DANE checks. |
-| 3 | **No off-box backup target yet**, retention undecided | Keep-forever default, local rolling snapshots, growth panel; retention stays opt-in. |
-| 4 | **Single admin**; read-only **share links without authentication** | OIDC/SSO stays dropped. Share links (Phase 3) use signed, revocable tokens. |
+| 1 | **SMTP + Telegram + Signal + webhook** alerts | Delivered. Signal runs through a `signal-cli` sidecar. |
+| 2 | App **may probe MX on 25** and other mail ports | Delivered: STARTTLS, certificates, DANE. |
+| 3 | **No off-box backup target yet**, retention undecided | Keep-forever default, local snapshots, growth panel; retention opt-in. |
+| 4 | **Single admin**; read-only **share links without authentication** later | No OIDC/SSO. Share links use signed, revocable tokens when built. |
+| 5 | **Analytics before sharing** (Rev 5, 24 Nov 2026) | No technical dependency; for a single-admin deployment, explaining changes is worth more than distributing them. Share links can move forward at any time if external access becomes necessary. |
 
 ## Remaining sequence
 
 | Phase | Theme | Effort | Status |
 | --- | --- | --- | --- |
-| **3** | Share links, export, fleet comparison table | 6–8 d | next |
-| **4** | Forensic (RUF) reports | 3–4 d | planned |
-| **5** | Platform: Postgres, IMAP, API tokens, metrics | 8–10 d | trigger-based |
-| **6** | Analytics depth: identities, anomalies, DMARCbis | 6–10 d | planned |
+| **6a.3** | Analytics remainder: coverage + anomaly scoring | 1–2 d | **next** |
+| **3.1** | Read-only share links | 2–3 d | planned |
+| **3.2–3.3** | Export + fleet comparison table | 3–4 d | planned |
+| **4** | Forensic (RUF) reports | 3–4 d | optional |
+| **5** | Platform: Postgres, IMAP, tokens, metrics | 8–10 d | trigger-based |
+| **6b** | DMARCbis readiness | 2–4 d | when the RFC is final |
 
-≈ **23–32 focused engineer-days** remaining, tests included. Alerting was the only piece that
-turns the product from pull to push; everything now is depth and sharing.
+≈ **19–27 focused engineer-days** remaining, tests included. Everything after 6a.3 is
+independent and can be reordered without rework.
 
 ---
 
-## Delivered: alerting (v1.2)
+## Phase 6a — Analytics depth (foundation delivered)
 
-Nine rules, evaluated hourly and from the Alerts page, over reports, health snapshots and
-probes. Incidents are deduplicated while open, repeat episodes respect a cooldown, and a
-resolution notice is sent when the condition clears. Thresholds, enablement and cooldown are
-editable per rule.
+### Delivered
 
-Schema: `alert_rules` (kind, condition JSON, enabled, cooldown) and `alert_events`
-(rule, domain, dedupe_key, severity, payload, triggered_at, resolved_at, delivered_at,
-delivery_error). Channel credentials stay in the environment, never in SQLite.
+- **Sender identities.** Sources are grouped by envelope/header domain + external DKIM domain.
+  Rotating addresses of one ESP collapse into one row; the same IP serving two recipient
+  domains no longer merges them (regression test). ASN/PTR appears as network context.
+- **ASN enrichment.** `scripts/fetch_geoip.py` downloads DB-IP ASN Lite (CC BY 4.0) by default,
+  `ip_meta.asn`/`asn_org` store the result, and the PTR job backfills existing IPs. Identity
+  grouping still works without the ASN file.
+- **What changed.** Current vs previous period chips for messages, aligned points, sources and
+  identities, plus the new-identity list, on the dashboard summary. The full identity table is
+  available in a drawer.
 
-| Rule | Default | Uses |
-| --- | --- | --- |
-| `compliance_drop` | aligned < 95 %, ≥ 10 messages, 24 h | reports |
-| `new_source` | unseen IP, ≥ 5 messages, 24 h | reports |
-| `dkim_break` | previously passing source now fails, 14 d lookback | reports |
-| `tls_failure` | TLS success < 95 %, ≥ 5 sessions | TLS-RPT |
-| `report_gap` | no report within expected interval + grace | reports + settings |
-| `volume_spike` | ≥ 3× trailing 28-day median, ≥ 20 messages | reports |
-| `policy_drift` | DNS p ≠ latest reported p | health snapshots |
-| `cert_expiry` | ≤ 21 d (warning), < 7 d (critical) | probes |
-| `starttls_broken` | probe fails without a certificate error | probes |
+### Remaining (1–2 days)
 
-Channels: SMTP, Telegram, Signal (signal-cli REST), webhook (HMAC-signed). "Run now" and a
-per-channel "Send test" live on the Alerts page; with no channel configured incidents are
-still recorded and the page names the missing variables.
-
-Deliberately left for later: per-domain overrides, "mute for N days", a header bell for
-unresolved incidents, and delivery retry with backoff (failures are recorded on the event
-and shown in the UI).
+- **Coverage:** reporter coverage per domain, subdomain coverage vs `sp=`, `pct` ramp timeline.
+- **Anomaly scoring:** robust z-score/MAD against a trailing 28-day baseline, feeding the
+  existing `volume_spike` rule instead of duplicating alerting. Deltas are currently exact
+  period-over-period numbers, not anomaly scores.
 
 ---
 
 ## Phase 3 — Share links, export, fleet (6–8 days)
 
-### 3.1 Unauthenticated read-only share links (2–3 d)
-Replaces viewer accounts, so the constraints matter more than the UI.
+Can move ahead of 6a if external sharing becomes urgent; it shares no code with analytics.
 
-- **Token:** `base64url(payload) + "." + base64url(HMAC-SHA256)`, payload
+### 3.1 Read-only share links (2–3 d)
+
+- Token: `base64url(payload) + "." + base64url(HMAC-SHA256)`, payload
   `{v, id, domain, days, include_sources, exp}`; link at `/s/<token>` (path, so it never
-  leaks through Referer).
-- **Server model:** `share_links(id, token_hash, domain, days, include_sources, created_at,
-  expires_at, revoked_at, last_used_at, uses)`. Only the hash is stored; links are revocable
-  and their last use is visible.
-- **API:** `/api/public/<token>/…` serves the dashboard and TLS summaries only. No raw
-  reports, no report search, no ingest, no alert config; envelope from/to stripped even when
-  sources are included.
-- **Hardening:** `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`, `no-store`, no
-  cookies, per-token rate limit, expiry capped at 90 days (default 7).
-- **UI:** Share button → scope, expiry, include-sources; active links with revoke. Public
-  view is the same dashboard in a read-only shell with a "shared view" badge.
+  leaks through `Referer`).
+- Storage: `share_links(id, token_hash, domain, days, include_sources, created_at,
+  expires_at, revoked_at, last_used_at, uses)`; only the hash is stored.
+- API: `/api/public/<token>/…` serves dashboard and TLS summaries only — no raw reports, no
+  search, no ingest, no alert config; envelope from/to stripped even when sources are shown.
+- Hardening: `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`, `no-store`, no cookies,
+  per-token rate limit, 7-day default / 90-day cap.
+- UI: Share button with scope/expiry/include-sources, active links with revoke, read-only
+  shared shell with a "shared view" badge.
 
 ### 3.2 Export (2 d)
-- `GET /api/export/reports.csv|json`, `/sources.csv`, `/tls.csv` with the UI's filters,
-  streamed.
-- `GET /api/export/raw.zip?domain=&from=&to=` — streamed ZIP of original XML/JSON, capped
-  (500 reports / 200 MB).
-- "Export current view" buttons in the report and TLS tables.
 
-### 3.3 Fleet comparison table (1–2 d)
-The fleet view currently shows KPIs, policy per domain and health. Add a sortable domain
-table: messages, aligned %, failing sources, last report, TLS success, policy, health,
-sparkline, click-through.
+Streamed `reports.csv|json`, `sources.csv`, `tls.csv` with current filters; capped
+`raw.zip` (500 reports / 200 MB); "Export current view" buttons.
+
+### 3.3 Fleet comparison (1–2 d)
+
+Sortable domain table: messages, aligned %, failing sources, last report, TLS success,
+policy, health, sparkline, click-through.
 
 ### 3.4 Retention (0.5 d)
-Still opt-in. When a decision is made: `RETENTION_DAYS`, archive raw payloads to
-`data/archive/YYYY/MM/` before pruning, `cli prune --dry-run`. The storage panel already
-provides the growth numbers.
+
+Opt-in only: `RETENTION_DAYS`, archive raw payloads to `data/archive/YYYY/MM/` before
+pruning, `cli prune --dry-run`. The storage panel already shows growth.
 
 ---
 
 ## Phase 4 — Forensic / RUF reports (3–4 days)
 
-Low priority: most receivers disable RUF.
+Optional; most receivers disable RUF.
 
-- Parse ARF (`multipart/report; report-type=feedback-report`): `Feedback-Type`,
-  `Authentication-Results`, `Original-Mail-From`, `Source-IP`, `Reported-Domain`.
-- **Headers and failed auth results only**, never bodies; subject/recipient redacted by
-  default. Per-domain opt-in, daily row cap, shorter retention.
-- Link forensic failures to the source IP row ("3 forensic reports").
+Parse ARF (`multipart/report; report-type=feedback-report`): `Feedback-Type`,
+`Authentication-Results`, `Original-Mail-From`, `Source-IP`, `Reported-Domain`. Headers and
+failed auth results only — never bodies; redact subject/recipient by default; per-domain
+opt-in, daily row cap, shorter retention. Link forensic failures to the source IP row.
 
 ---
 
 ## Phase 5 — Platform (8–10 days)
 
-### 5.1 PostgreSQL (2–3 d)
-Trigger: >10 M source records, multiple instances, external BI. Audit `func.date()`,
-`ILIKE`, JSON operators and boolean comparisons in [analytics.py](../backend/app/analytics.py);
-add a SQLite + Postgres CI matrix.
+| Item | Effort | Trigger |
+| --- | --- | --- |
+| PostgreSQL | 2–3 d | >10 M source records, multiple instances, external BI; audit `func.date()`, `ILIKE`, JSON operators; SQLite+Postgres CI matrix |
+| IMAP transport | 3 d | `imaplib` behind the `JMAPClient` interface: `UIDVALIDITY`, `IDLE` fallback, `BODY.PEEK[]`, handled flag |
+| API tokens, metrics, webhook | 2–3 d | read-only bearer tokens (`dvc_…`, hashed, per-domain), Prometheus `/api/metrics`, optional new-report webhook |
 
-### 5.2 IMAP transport (3 d)
-`imaplib` behind the same interface as [JMAPClient](../backend/app/ingest/jmap.py):
-`UIDVALIDITY` persistence, `IDLE` with polling fallback, `BODY.PEEK[]`, handled flag/move,
-`MAIL_SOURCE=imap`.
-
-### 5.3 API tokens, metrics, ingestion webhook (2–3 d)
-Read-only bearer tokens (`dvc_…`, hashed, per-domain scope), Prometheus `/api/metrics`
-(ingest lag, report counts, failed probes, cert expiry), optional webhook on new reports.
-
-### 5.4 SSO — parked
-Single admin by decision. If that changes: Authlib/OIDC or `AUTH_MODE=header` behind a reverse
-proxy; neither is scheduled.
+SSO stays parked unless the single-admin decision changes.
 
 ---
 
-## Phase 6 — Analytics depth (6–10 days)
+## Phase 6b — DMARCbis readiness (2–4 days)
 
-- **Sender identity grouping** by envelope domain / DKIM domain, not just IP, so "the CRM" is
-  one row instead of 40 rotating addresses.
-- **Reporter coverage & gaps** per domain, catching silent `rua` problems individually.
-- **Subdomain coverage** vs `sp=`, flagging subdomains with no policy.
-- **`pct` ramp tracking** as a timeline (25 → 50 → 100).
-- **Anomaly detection** (z-score vs trailing 28-day baseline) feeding `volume_spike` and a
-  "what changed" diff against the previous period.
-- **DMARCbis readiness** once the RFC is final: testing flag, non-existent-subdomain policy,
-  tightened syntax.
+After the RFC is final:
+
+- testing flag (`t=`), non-existent-subdomain policy (`np=`), tightened syntax;
+- `pct=` handling and external reporting addresses;
+- a readiness panel comparing live DNS with the stored reports;
+- recommendations only — never automatic DNS changes.
 
 ---
 
-## Quick wins (each < 1 day)
+## Quick wins
 
-- CSV export of the current table (before Phase 3).
-- "Report gap" banner on the dashboard when a domain has had no report for 48 h.
+Done: report-gap banner, copy-to-clipboard for policies and report IDs.
+
+Remaining (<1 day each):
+
 - Print stylesheet for the dashboard.
 - Editable domain display names and notes (`domains.notes` already exists).
 - Filters (domain, period, search) persisted in the URL.
-- Copy-to-clipboard for policy strings and report IDs.
 - Per-domain mute for scheduled checks.
 
 ---
@@ -190,9 +171,7 @@ proxy; neither is scheduled.
 
 ## Still open
 
-1. **Off-box backup:** when a target appears, the local snapshot format is what it should
-   sync; name the target before Phase 3 closes.
-2. **Retention:** revisit once the storage panel shows real growth; the mechanism is not
-   built, only the numbers are.
-3. **Alert follow-ups:** whether per-domain overrides and delivery retry are worth the
-   complexity after real-world use.
+1. **Off-box backup:** when a target appears, the local snapshot format is what it syncs.
+2. **Retention:** revisit once the storage panel shows real growth.
+3. **Alert follow-ups:** per-domain overrides and delivery retry after real-world use.
+4. **Share-link defaults:** expiry and whether "include sources" is allowed.

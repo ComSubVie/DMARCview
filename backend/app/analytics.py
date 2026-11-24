@@ -8,6 +8,7 @@ the FastAPI routers stay thin.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -16,7 +17,17 @@ from sqlmodel import Session, select
 
 from .config import get_settings
 from .geoip import COUNTRY_NAMES, country_flag
-from .models import Domain, IpMeta, Report, SourceRecord, TlsFailure, TlsPolicy, TlsReport
+from .models import (
+    Domain,
+    DomainSettings,
+    IpMeta,
+    Report,
+    SourceRecord,
+    TlsFailure,
+    TlsPolicy,
+    TlsReport,
+    utcnow,
+)
 from .providers import provider_for
 
 MAX_DAYS = 366
@@ -293,7 +304,255 @@ def dashboard(session: Session, domain: Optional[Domain], rng: DateRange) -> dic
             "mx_hosts": len(tls_hosts),
         },
         "advice": advise(policy, summary, rng.days),
+        "report_gaps": _report_gaps(session, domain_id),
+        "identities": _identities(session, domain_id, rng),
+        "changes": _changes(session, domain_id, rng),
         "generated_at": _iso(datetime.now(timezone.utc)),
+    }
+
+
+def _report_gaps(session: Session, domain_id: Optional[int] = None) -> list[dict[str, Any]]:
+    """Domains whose newest report is older than their expected interval."""
+    rows = session.exec(
+        select(Domain.id, Domain.name, func.max(Report.date_end))
+        .join(Report, Report.domain_id == Domain.id)
+        .group_by(Domain.id, Domain.name)
+    ).all()
+    expected_by_domain = {
+        row.domain_id: int(row.expected_report_hours)
+        for row in session.exec(select(DomainSettings)).all()
+    }
+    now = utcnow()
+    gaps: list[dict[str, Any]] = []
+    for did, name, latest in rows:
+        if domain_id is not None and did != domain_id:
+            continue
+        if latest is None:
+            continue
+        if latest.tzinfo is None:
+            latest = latest.replace(tzinfo=timezone.utc)
+        expected = expected_by_domain.get(did, 48)
+        hours = int((now - latest).total_seconds() // 3600)
+        if hours <= expected:
+            continue
+        gaps.append(
+            {
+                "domain": name,
+                "hours": hours,
+                "expected_hours": expected,
+                "last_report": _iso(latest),
+            }
+        )
+    return sorted(gaps, key=lambda item: item["hours"], reverse=True)
+
+
+def _mail_domain(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    text = value.strip().lower()
+    if "@" in text:
+        text = text.rsplit("@", 1)[1]
+    return text.strip(".")
+
+
+def _identities(
+    session: Session, domain_id: Optional[int], rng: DateRange, limit: int = 100
+) -> dict[str, Any]:
+    """Collapse rotating source IPs into sender identities.
+
+    The key is the envelope/header domain plus the DKIM domain, so 40 rotating ESP
+    addresses become one row while different authenticated identities stay apart.
+    ASN/PTR is used as a display hint, not as part of the key.
+    """
+    conditions = _source_conditions(domain_id, rng)
+    rows = session.exec(
+        select(
+            SourceRecord.source_ip,
+            SourceRecord.domain_id,
+            SourceRecord.envelope_from,
+            SourceRecord.header_from,
+            func.coalesce(func.sum(SourceRecord.message_count), 0),
+            func.coalesce(func.sum(case((ALIGNED, SourceRecord.message_count), else_=0)), 0),
+            func.coalesce(func.sum(case((SourceRecord.dkim_pass, SourceRecord.message_count), else_=0)), 0),
+            func.coalesce(func.sum(case((SourceRecord.spf_pass, SourceRecord.message_count), else_=0)), 0),
+            func.min(SourceRecord.report_date),
+            func.max(SourceRecord.report_date),
+            func.max(SourceRecord.country_code),
+            func.max(SourceRecord.country_name),
+        )
+        .where(*conditions)
+        .group_by(
+            SourceRecord.source_ip,
+            SourceRecord.domain_id,
+            SourceRecord.envelope_from,
+            SourceRecord.header_from,
+        )
+    ).all()
+    if not rows:
+        return {"total": 0, "items": []}
+
+    dkim_by_source: dict[tuple[str, int, Optional[str], Optional[str]], set[str]] = {}
+    for ip, did, envelope, header, domains in session.exec(
+        select(
+            SourceRecord.source_ip,
+            SourceRecord.domain_id,
+            SourceRecord.envelope_from,
+            SourceRecord.header_from,
+            SourceRecord.dkim_domains,
+        ).where(*conditions)
+    ).all():
+        if not domains or not isinstance(domains, list):
+            continue
+        bucket = dkim_by_source.setdefault((ip, did, envelope, header), set())
+        for domain in domains:
+            if domain:
+                bucket.add(str(domain).lower())
+
+    addresses = [row[0] for row in rows]
+    domain_names = {domain.id: domain.name for domain in session.exec(select(Domain)).all()}
+    metas = {
+        meta.ip: meta
+        for meta in session.exec(select(IpMeta).where(IpMeta.ip.in_(addresses))).all()
+    }
+
+    groups: dict[str, dict[str, Any]] = {}
+    for ip, did, envelope, header, messages, aligned, dkim, spf, first, last, cc, cn in rows:
+        env_domain = _mail_domain(envelope) or _mail_domain(header)
+        dkim_set = dkim_by_source.get((ip, did, envelope, header), set())
+        external_dkim = sorted(domain for domain in dkim_set if domain and domain != env_domain)
+        primary_dkim = external_dkim[0] if external_dkim else ""
+        key = f"{env_domain}|{primary_dkim}" if (env_domain or primary_dkim) else f"ip:{did}:{ip}"
+        if primary_dkim and env_domain and primary_dkim != env_domain:
+            label, detail = primary_dkim, f"envelope {env_domain}"
+        elif env_domain:
+            label, detail = env_domain, ""
+        elif primary_dkim:
+            label, detail = primary_dkim, ""
+        else:
+            label, detail = ip, domain_names.get(did, "") if did else ""
+
+        group = groups.get(key)
+        if group is None:
+            group = {
+                "key": key,
+                "label": label,
+                "detail": detail,
+                "messages": 0,
+                "aligned": 0,
+                "dkim_pass": 0,
+                "spf_pass": 0,
+                "sources": 0,
+                "first_seen": first,
+                "last_seen": last,
+                "countries": Counter(),
+                "networks": Counter(),
+                "ips": Counter(),
+            }
+            groups[key] = group
+        group["messages"] += int(messages or 0)
+        group["aligned"] += int(aligned or 0)
+        group["dkim_pass"] += int(dkim or 0)
+        group["spf_pass"] += int(spf or 0)
+        group["sources"] += 1
+        if first and (group["first_seen"] is None or first < group["first_seen"]):
+            group["first_seen"] = first
+        if last and (group["last_seen"] is None or last > group["last_seen"]):
+            group["last_seen"] = last
+        if cc:
+            group["countries"][(cc, cn or COUNTRY_NAMES.get(cc, cc))] += int(messages or 0)
+        meta = metas.get(ip)
+        network = (meta.asn_org if meta and meta.asn_org else None) or (meta.ptr if meta else None)
+        if network:
+            group["networks"][network] += int(messages or 0)
+        group["ips"][ip] += int(messages or 0)
+
+    items: list[dict[str, Any]] = []
+    for group in groups.values():
+        messages = group["messages"]
+        countries = group.pop("countries")
+        networks = group.pop("networks")
+        ips = group.pop("ips")
+        country = countries.most_common(1)[0][0] if countries else (None, None)
+        group["country_code"] = country[0]
+        group["country"] = country[1]
+        group["network"] = networks.most_common(1)[0][0] if networks else ""
+        group["aligned_pct"] = round(group["aligned"] / messages * 100, 1) if messages else 0.0
+        group["first_seen"] = group["first_seen"].isoformat() if group["first_seen"] else None
+        group["last_seen"] = group["last_seen"].isoformat() if group["last_seen"] else None
+        group["ips"] = [ip for ip, _ in ips.most_common(3)]
+        items.append(group)
+
+    items.sort(key=lambda item: (-item["messages"], item["label"]))
+    return {"total": len(items), "items": items[:limit]}
+
+
+def _period_summary(session: Session, domain_id: Optional[int], rng: DateRange) -> dict[str, Any]:
+    conditions = _source_conditions(domain_id, rng)
+    messages, aligned, sources = session.exec(
+        select(
+            func.coalesce(func.sum(SourceRecord.message_count), 0),
+            func.coalesce(func.sum(case((ALIGNED, SourceRecord.message_count), else_=0)), 0),
+            func.count(distinct(SourceRecord.source_ip)),
+        ).where(*conditions)
+    ).one()
+    messages, aligned, sources = int(messages or 0), int(aligned or 0), int(sources or 0)
+    return {
+        "messages": messages,
+        "aligned": aligned,
+        "aligned_pct": round(aligned / messages * 100, 1) if messages else 0.0,
+        "sources": sources,
+    }
+
+
+def _changes(session: Session, domain_id: Optional[int], rng: DateRange) -> dict[str, Any]:
+    previous_end = rng.start - timedelta(days=1)
+    previous_start = previous_end - timedelta(days=max(0, rng.days - 1))
+    previous_range = DateRange(previous_start, previous_end, rng.days, "previous")
+    current = _period_summary(session, domain_id, rng)
+    previous = _period_summary(session, domain_id, previous_range)
+    if previous["messages"] == 0:
+        return {"available": False, "chips": [], "new_identities": [], "lost_identities": []}
+
+    current_identities = _identities(session, domain_id, rng)
+    previous_identities = _identities(session, domain_id, previous_range)
+    current_keys = {item["key"]: item["label"] for item in current_identities["items"]}
+    previous_keys = {item["key"]: item["label"] for item in previous_identities["items"]}
+
+    def percent_delta(value: float, old: float) -> str:
+        return f"{(value - old) / old * 100:+.0f}%" if old else "—"
+
+    aligned_delta = current["aligned_pct"] - previous["aligned_pct"]
+    chips = [
+        {
+            "key": "messages",
+            "label": "Messages",
+            "display": percent_delta(current["messages"], previous["messages"]),
+            "tone": "neutral",
+        },
+        {
+            "key": "aligned",
+            "label": "Aligned",
+            "display": f"{aligned_delta:+.1f} pts",
+            "tone": "good" if aligned_delta >= 0 else "warn",
+        },
+        {
+            "key": "sources",
+            "label": "Sources",
+            "display": f"{current['sources'] - previous['sources']:+d}",
+            "tone": "neutral",
+        },
+        {
+            "key": "identities",
+            "label": "Identities",
+            "display": f"{current_identities['total'] - previous_identities['total']:+d}",
+            "tone": "neutral",
+        },
+    ]
+    return {
+        "available": True,
+        "chips": chips,
+        "new_identities": [label for key, label in current_keys.items() if key not in previous_keys][:5],
+        "lost_identities": [label for key, label in previous_keys.items() if key not in current_keys][:5],
     }
 
 

@@ -11,10 +11,21 @@ import {
 } from "recharts";
 import { api, ApiError, rawTlsReportUrl } from "../api";
 import { Drawer } from "../components/Drawer";
-import { Badge, EmptyState, Skeleton } from "../components/ui";
+import { Badge, CopyButton, EmptyState, Skeleton } from "../components/ui";
 import { formatNumber, formatPct, longDate, shortDate } from "../lib/format";
 import { useData } from "../state";
 import type { TlsDashboard, TlsReportDetail, TlsReportRow } from "../types";
+
+function policyText(policy: {
+  string: string[];
+  type?: string | null;
+  mode?: string | null;
+  mx_hosts: string[];
+}): string {
+  return policy.string.length > 0
+    ? policy.string.join("\n")
+    : `${policy.type ?? "—"}\n${policy.mode ?? "—"}\n${policy.mx_hosts.join(", ")}`;
+}
 
 function TlsTooltip({
   active,
@@ -92,7 +103,10 @@ function TlsDrawer({ id, onClose }: { id: number; onClose: () => void }) {
           </div>
 
           <section className="card" style={{ padding: 16 }}>
-            <div className="eyebrow">Published policy</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div className="eyebrow">Published policy</div>
+              <CopyButton value={policyText(report.policy)} label="Copy TLS policy" />
+            </div>
             <pre
               style={{
                 margin: "8px 0 0",
@@ -398,9 +412,12 @@ export function TlsPage() {
               <h2 className="card-title">Published TLS policy</h2>
               <p className="card-sub">From the latest TLS-RPT report</p>
             </div>
-            <Badge tone={data.policy?.mode === "enforce" ? "good" : "warn"}>
-              {data.policy?.mode ?? "unknown"}
-            </Badge>
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              {data.policy ? <CopyButton value={policyText(data.policy)} label="Copy TLS policy" /> : null}
+              <Badge tone={data.policy?.mode === "enforce" ? "good" : "warn"}>
+                {data.policy?.mode ?? "unknown"}
+              </Badge>
+            </div>
           </div>
           <div className="card-body">
             {data.policy ? (

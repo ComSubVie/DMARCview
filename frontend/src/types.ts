@@ -156,7 +156,54 @@ export interface Dashboard {
   volume: { month_messages: number; alert_threshold: number; pct: number };
   tls: TlsSummary;
   advice: Advice;
+  report_gaps: ReportGap[];
+  identities: Identities;
+  changes: Changes;
   generated_at: string;
+}
+
+export interface Identity {
+  key: string;
+  label: string;
+  detail: string;
+  messages: number;
+  aligned: number;
+  aligned_pct: number;
+  dkim_pass: number;
+  spf_pass: number;
+  sources: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  network: string;
+  country: string | null;
+  country_code: string | null;
+  ips: string[];
+}
+
+export interface Identities {
+  total: number;
+  items: Identity[];
+}
+
+export interface ChangeChip {
+  key: string;
+  label: string;
+  display: string;
+  tone: "good" | "warn" | "neutral";
+}
+
+export interface Changes {
+  available: boolean;
+  chips: ChangeChip[];
+  new_identities: string[];
+  lost_identities: string[];
+}
+
+export interface ReportGap {
+  domain: string;
+  hours: number;
+  expected_hours: number;
+  last_report: string;
 }
 
 export interface ReportRow {

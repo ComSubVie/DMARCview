@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Policy } from "../types";
+import type { Changes, Policy } from "../types";
 import { Badge } from "./ui";
 
 function emphasise(text: string): ReactNode[] {
@@ -12,10 +12,12 @@ export function SummaryCard({
   sentences,
   failed,
   policy,
+  changes,
 }: {
   sentences: string[];
   failed: number;
   policy: Policy | null;
+  changes: Changes;
 }) {
   const severity = failed > 0 ? { tone: "bad" as const, label: "Attention" } : { tone: "good" as const, label: "Clean" };
   const [lead, ...rest] = sentences;
@@ -38,12 +40,30 @@ export function SummaryCard({
         <Badge tone={severity.tone}>{severity.label}</Badge>
       </div>
       <h2>What changed this period</h2>
+      {changes.available ? (
+        <div className="summary-changes">
+          {changes.chips.map((chip) => (
+            <span className={`delta-chip ${chip.tone}`} key={chip.key}>
+              {chip.label} <strong>{chip.display}</strong>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="tiny muted" style={{ marginTop: 8 }}>
+          No previous period to compare yet.
+        </p>
+      )}
       <div className="summary-text">
         {lead ? <p>{emphasise(lead)}</p> : null}
         {rest.slice(0, 3).map((sentence) => (
           <p key={sentence}>{emphasise(sentence)}</p>
         ))}
       </div>
+      {changes.available && changes.new_identities.length > 0 ? (
+        <p className="tiny muted" style={{ marginTop: 10 }}>
+          New identities: {changes.new_identities.join(", ")}
+        </p>
+      ) : null}
       <div className="review">
         <span className="rev-label">Review</span>
         <span>{review}</span>

@@ -51,8 +51,10 @@ class GeoResolver:
         for directory in (data_dir / "geoip", data_dir):
             if not directory.is_dir():
                 continue
-            for pattern in ("*.mmdb",):
-                matches = sorted(directory.glob(pattern))
+            for pattern in ("*country*.mmdb", "*.mmdb"):
+                matches = [
+                    path for path in sorted(directory.glob(pattern)) if "asn" not in path.name.lower()
+                ]
                 if matches:
                     return matches[0]
         return None
@@ -102,7 +104,77 @@ class GeoResolver:
         return result
 
 
+class AsnResolver:
+    """Offline ASN lookup from a MaxMind/DB-IP ``.mmdb`` database."""
+
+    def __init__(self, path: Optional[str] = None) -> None:
+        self._lock = threading.Lock()
+        self._cache: dict[str, tuple[Optional[int], Optional[str]]] = {}
+        self._reader = None
+        self.path = self._find_database(path)
+        self._open()
+
+    @staticmethod
+    def _find_database(explicit: Optional[str]) -> Optional[Path]:
+        if explicit:
+            candidate = Path(explicit)
+            if candidate.is_file():
+                return candidate
+            log.warning("GEOIP_ASN_DB points at %s but no file exists there", explicit)
+        data_dir = get_settings().data_dir
+        for directory in (data_dir / "geoip", data_dir):
+            if not directory.is_dir():
+                continue
+            matches = sorted(directory.glob("*asn*.mmdb"))
+            if matches:
+                return matches[0]
+        return None
+
+    def _open(self) -> None:
+        if self.path is None:
+            return
+        try:
+            import maxminddb
+        except ImportError:  # pragma: no cover - optional dependency
+            return
+        try:
+            self._reader = maxminddb.open_database(str(self.path))
+            log.info("ASN database loaded from %s", self.path)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("could not open ASN database %s: %s", self.path, exc)
+
+    @property
+    def available(self) -> bool:
+        return self._reader is not None
+
+    def lookup(self, ip: Optional[str]) -> tuple[Optional[int], Optional[str]]:
+        if not ip:
+            return None, None
+        with self._lock:
+            if ip in self._cache:
+                return self._cache[ip]
+        result: tuple[Optional[int], Optional[str]] = (None, None)
+        try:
+            address = ipaddress.ip_address(ip.strip())
+            if address.is_private or address.is_loopback or address.is_reserved or address.is_multicast:
+                result = (None, None)
+            elif self._reader is not None:
+                raw = self._reader.get(str(address)) or {}
+                number = raw.get("autonomous_system_number")
+                org = raw.get("autonomous_system_organization")
+                if number:
+                    result = (int(number), str(org)[:255] if org else None)
+        except ValueError:
+            result = (None, None)
+        except Exception:  # noqa: BLE001
+            result = (None, None)
+        with self._lock:
+            self._cache[ip] = result
+        return result
+
+
 _resolver: Optional[GeoResolver] = None
+_asn_resolver: Optional[AsnResolver] = None
 _resolver_lock = threading.Lock()
 
 
@@ -115,9 +187,18 @@ def get_geo_resolver() -> GeoResolver:
 
 
 def reset_geo_resolver() -> None:
-    global _resolver
+    global _resolver, _asn_resolver
     with _resolver_lock:
         _resolver = None
+        _asn_resolver = None
+
+
+def get_asn_resolver() -> AsnResolver:
+    global _asn_resolver
+    with _resolver_lock:
+        if _asn_resolver is None:
+            _asn_resolver = AsnResolver(get_settings().geoip_asn_db or None)
+        return _asn_resolver
 
 
 def country_flag(code: Optional[str]) -> str:

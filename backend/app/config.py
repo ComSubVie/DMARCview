@@ -80,6 +80,7 @@ class Settings:
     ingest_initial_days: int = 90
 
     geoip_db: str = ""
+    geoip_asn_db: str = ""
     monthly_message_alert: int = 10000
 
     #: Comma-separated resolver addresses; empty uses the system resolver.
@@ -169,6 +170,7 @@ def _build_settings() -> Settings:
         jmap_poll_seconds=max(30, _env_int("JMAP_POLL_SECONDS", 300)),
         ingest_initial_days=max(1, _env_int("INGEST_INITIAL_DAYS", 90)),
         geoip_db=_env("GEOIP_DB"),
+        geoip_asn_db=_env("GEOIP_ASN_DB"),
         monthly_message_alert=_env_int("MONTHLY_MESSAGE_ALERT", 10000),
         dns_nameservers=_env("DNS_NAMESERVERS"),
         health_checks_enabled=_env_bool("HEALTH_CHECKS_ENABLED", True),

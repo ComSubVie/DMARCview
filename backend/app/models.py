@@ -336,12 +336,14 @@ class TransportProbe(SQLModel, table=True):
 
 
 class IpMeta(SQLModel, table=True):
-    """Cached reverse DNS (and future ASN) data for sending IPs."""
+    """Cached reverse DNS and ASN data for sending IPs."""
 
     __tablename__ = "ip_meta"
 
     ip: str = Field(primary_key=True, max_length=64)
     ptr: Optional[str] = Field(default=None, max_length=255)
+    asn: Optional[int] = Field(default=None)
+    asn_org: Optional[str] = Field(default=None, max_length=255)
     updated_at: datetime = Field(default_factory=utcnow)
 
 

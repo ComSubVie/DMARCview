@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight, Download, FileText, Search, ShieldAlert } fr
 import { useEffect, useState } from "react";
 import { api, ApiError, rawReportUrl } from "../api";
 import { Drawer } from "../components/Drawer";
-import { Badge, CheckCell, EmptyState, Skeleton } from "../components/ui";
+import { Badge, CheckCell, CopyButton, EmptyState, Skeleton } from "../components/ui";
 import { dateTime, formatNumber, longDate, shortDate } from "../lib/format";
 import { useData } from "../state";
 import type { ReportDetail, ReportsPage as ReportsPageData, ReportRow } from "../types";
@@ -48,8 +48,12 @@ function ReportDrawer({ id, onClose }: { id: number; onClose: () => void }) {
           <div className="meta-grid">
             <div className="meta-cell">
               <div className="k">Report</div>
-              <div className="v" style={{ fontFamily: "var(--font-mono)", fontSize: 11.5 }}>
-                {report.report_id}
+              <div
+                className="v"
+                style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, display: "flex", alignItems: "center", gap: 3 }}
+              >
+                <span style={{ overflowWrap: "anywhere" }}>{report.report_id}</span>
+                <CopyButton value={report.report_id} label="Copy report ID" />
               </div>
             </div>
             <div className="meta-cell">
@@ -76,6 +80,10 @@ function ReportDrawer({ id, onClose }: { id: number; onClose: () => void }) {
             <Badge tone="neutral">pct={report.policy.pct ?? 100}</Badge>
             <Badge tone="neutral">adkim={report.policy.adkim ?? "r"}</Badge>
             <Badge tone="neutral">aspf={report.policy.aspf ?? "r"}</Badge>
+            <CopyButton
+              value={`p=${report.policy.p}; sp=${report.policy.sp ?? "—"}; pct=${report.policy.pct ?? 100}; adkim=${report.policy.adkim ?? "r"}; aspf=${report.policy.aspf ?? "r"}`}
+              label="Copy report policy"
+            />
             <span style={{ marginLeft: "auto" }}>
               <a className="btn ghost" href={rawReportUrl(report.id)} download>
                 <Download size={14} />
@@ -161,12 +169,15 @@ function Row({ report, onOpen }: { report: ReportRow; onOpen: () => void }) {
           <span className="provider-dot" style={{ background: report.org_color, width: 8, height: 8 }} />
           <div>
             <div className="primary-cell">{report.org_name}</div>
-            <div
-              className="tiny muted"
-              style={{ fontFamily: "var(--font-mono)" }}
-              title={report.report_id}
-            >
-              {report.report_id.length > 34 ? `${report.report_id.slice(0, 34)}…` : report.report_id}
+            <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+              <span
+                className="tiny muted"
+                style={{ fontFamily: "var(--font-mono)" }}
+                title={report.report_id}
+              >
+                {report.report_id.length > 34 ? `${report.report_id.slice(0, 34)}…` : report.report_id}
+              </span>
+              <CopyButton value={report.report_id} label="Copy report ID" />
             </div>
           </div>
         </div>

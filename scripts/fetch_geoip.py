@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download a free country-level GeoIP database (DB-IP Lite, CC BY 4.0).
+"""Download free country and ASN GeoIP databases (DB-IP Lite, CC BY 4.0).
 
     python3 scripts/fetch_geoip.py [destination-dir]
 
@@ -121,7 +121,12 @@ def fetch(url: str, contexts: list[tuple[str, ssl.SSLContext]], timeout: int = 6
     raise DownloadError("all trust stores failed", problems)
 
 
-def download(dest: Path, ca_file: str | None = None, insecure: bool = False) -> Path:
+def download(
+    dest: Path,
+    prefix: str = "dbip-country-lite",
+    ca_file: str | None = None,
+    insecure: bool = False,
+) -> Path:
     contexts = build_contexts(ca_file, insecure)
     if insecure:
         print("WARNING: TLS verification disabled (--insecure)")
@@ -129,7 +134,7 @@ def download(dest: Path, ca_file: str | None = None, insecure: bool = False) -> 
     trust_problems: list[str] = []
 
     for month in month_candidates(date.today()):
-        url = f"https://download.db-ip.com/free/dbip-country-lite-{month}.mmdb.gz"
+        url = f"https://download.db-ip.com/free/{prefix}-{month}.mmdb.gz"
         print(f"trying {url}")
         try:
             compressed = fetch(url, contexts)
@@ -149,7 +154,7 @@ def download(dest: Path, ca_file: str | None = None, insecure: bool = False) -> 
         print(f"saved {dest} ({len(data) / 1_048_576:.1f} MiB)")
         return dest
 
-    raise DownloadError("could not download a GeoIP database", errors + trust_problems)
+    raise DownloadError(f"could not download {prefix}", errors + trust_problems)
 
 
 def main() -> int:
@@ -161,6 +166,11 @@ def main() -> int:
         action="store_true",
         help="skip TLS verification (only if no CA bundle works)",
     )
+    parser.add_argument(
+        "--no-asn",
+        action="store_true",
+        help="skip the ASN database (identity grouping falls back to PTR/domains)",
+    )
     args = parser.parse_args()
 
     destination = Path(args.destination)
@@ -171,6 +181,18 @@ def main() -> int:
     )
     try:
         download(target, ca_file=args.ca_file, insecure=args.insecure)
+        if destination.suffix != ".mmdb" and not args.no_asn:
+            asn_target = destination / "dbip-asn-lite.mmdb"
+            try:
+                download(
+                    asn_target,
+                    prefix="dbip-asn-lite",
+                    ca_file=args.ca_file,
+                    insecure=args.insecure,
+                )
+            except DownloadError as exc:
+                print(f"WARNING: ASN database not downloaded: {exc}", file=sys.stderr)
+                print("Identity grouping will fall back to domains and PTR.", file=sys.stderr)
     except DownloadError as exc:
         print(exc, file=sys.stderr)
         for problem in exc.problems:
@@ -184,7 +206,7 @@ def main() -> int:
                 file=sys.stderr,
             )
         return 1
-    print("Set GEOIP_DB to this path if it is not in data/geoip/.")
+    print("Set GEOIP_DB / GEOIP_ASN_DB if the files are not in data/geoip/.")
     return 0
 
 

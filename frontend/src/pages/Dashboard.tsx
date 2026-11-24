@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { CountriesCard } from "../components/CountriesCard";
 import { HealthCard } from "../components/HealthCard";
+import { IdentitiesCard } from "../components/IdentitiesCard";
 import { ProbesCard } from "../components/ProbesCard";
 import { KpiCard } from "../components/KpiCard";
 import { PolicyCard } from "../components/PolicyCard";
@@ -122,6 +123,36 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {dashboard.report_gaps.length > 0 ? (
+        <section className="gap-banner" role="status">
+          <span className="gap-icon">
+            <Inbox size={16} />
+          </span>
+          <div>
+            <strong>
+              {dashboard.report_gaps.length === 1
+                ? "DMARC reports stopped"
+                : `DMARC reports stopped for ${dashboard.report_gaps.length} domains`}
+            </strong>
+            <p>
+              {dashboard.report_gaps
+                .slice(0, 3)
+                .map(
+                  (gap) =>
+                    `${gap.domain}: ${gap.hours}h since the last report (expected every ${gap.expected_hours}h)`,
+                )
+                .join(" · ")}
+              {dashboard.report_gaps.length > 3
+                ? ` · +${dashboard.report_gaps.length - 3} more`
+                : ""}
+            </p>
+          </div>
+          <Link className="btn soft" to="/ingest">
+            Check ingestion
+          </Link>
+        </section>
+      ) : null}
+
       {kpis.messages === 0 ? (
         <section className="card" style={{ marginTop: 6 }}>
           <EmptyState
@@ -220,7 +251,12 @@ export function DashboardPage() {
 
           <div className="grid cols-8-4">
             <VolumeChart daily={dashboard.daily} days={dashboard.range.days} />
-            <SummaryCard sentences={kpis.sentences} failed={kpis.failed} policy={dashboard.policy} />
+            <SummaryCard
+              sentences={kpis.sentences}
+              failed={kpis.failed}
+              policy={dashboard.policy}
+              changes={dashboard.changes}
+            />
           </div>
 
           <div className="grid cols-8-4 grid-bottom">
@@ -236,6 +272,8 @@ export function DashboardPage() {
               />
             </div>
           </div>
+
+          <IdentitiesCard identities={dashboard.identities} />
         </>
       )}
     </div>

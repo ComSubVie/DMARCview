@@ -1178,6 +1178,10 @@ table.data td .primary-cell {
 }
 
 .policy-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 6px;
   padding: 10px 12px;
   border-radius: 10px;
@@ -2809,5 +2813,153 @@ table.data td .primary-cell {
   }
   .rule-description {
     max-width: none;
+  }
+}
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 23px;
+  height: 23px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-4);
+  cursor: pointer;
+  vertical-align: middle;
+  flex: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.copy-btn:hover {
+  background: #eef1f8;
+  color: var(--ink);
+}
+
+.copy-btn.copied {
+  color: var(--green);
+}
+
+.gap-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 4px 0 16px;
+  padding: 13px 15px;
+  border: 1px solid #f2ddba;
+  border-radius: 13px;
+  background: linear-gradient(180deg, #fffdf8, #fff9ee);
+}
+
+.gap-banner .gap-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 9px;
+  background: #fdf1d8;
+  color: #b54708;
+}
+
+.gap-banner strong {
+  display: block;
+  font-size: 13px;
+  color: #7a2e0e;
+}
+
+.gap-banner p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #8a4b23;
+}
+
+.gap-banner .btn {
+  margin-left: auto;
+  flex: none;
+}
+
+@media (max-width: 640px) {
+  .gap-banner {
+    flex-wrap: wrap;
+  }
+  .gap-banner .btn {
+    margin-left: 42px;
+  }
+}
+
+
+/* ------------------------------------------------------------ identities */
+.identities-card {
+  margin-top: 16px;
+}
+
+.identities-table .identity-name {
+  max-width: 260px;
+  overflow-wrap: anywhere;
+}
+
+.identity-network {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.summary-changes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.delta-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fbfcff;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.delta-chip strong {
+  font-size: 11.5px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.delta-chip.good {
+  border-color: #d5eee5;
+  background: #f5fbf8;
+}
+
+.delta-chip.good strong {
+  color: #067647;
+}
+
+.delta-chip.warn {
+  border-color: #f6e3c2;
+  background: #fffdf7;
+}
+
+.delta-chip.warn strong {
+  color: #b54708;
+}
+
+@media (max-width: 640px) {
+  .identities-table th:nth-child(3),
+  .identities-table td:nth-child(3) {
+    display: none;
   }
 }

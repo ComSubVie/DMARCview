@@ -22,6 +22,9 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
   - Compliance over time, aligned vs. failing volume per day.
   - Sending sources grouped into *verified* / *not verified*, with the raw SPF and DKIM
     result *and* the aligned DMARC verdict shown separately.
+  - Sender **identities**: rotating ESP addresses collapse into one row per envelope/DKIM
+    identity, with messages, alignment, sources and network context.
+  - Period-over-period deltas ("what changed") and new identities.
   - Top countries, mailbox providers, plain-English summary, and a policy recommendation.
 - **TLS delivery.** Session success rate per MX host, failure reasons
   (`certificate-expired`, `starttls-not-supported`, …) and the reporters behind them.
@@ -226,7 +229,8 @@ All settings are environment variables (`.env` is loaded automatically).
 | `SIGNAL_API_URL` / `SIGNAL_NUMBER` / `SIGNAL_RECIPIENTS` | — | Signal via a signal-cli REST sidecar. |
 | `WEBHOOK_URL` / `WEBHOOK_SECRET` | — | JSON webhook with an HMAC signature. |
 | `MONTHLY_MESSAGE_ALERT` | `10000` | Progress-bar target on the dashboard. |
-| `GEOIP_DB` | auto | Path to a `.mmdb`; otherwise `data/geoip/*.mmdb`. |
+| `GEOIP_DB` | auto | Path to the country `.mmdb`; otherwise `data/geoip/*country*.mmdb`. |
+| `GEOIP_ASN_DB` | auto | Path to the ASN `.mmdb`; otherwise `data/geoip/*asn*.mmdb`. |
 | `DATA_DIR` | `./data` | Database location outside Docker. |
 | `DATABASE_URL` | `sqlite:///…/data/dmarc.db` | Full SQLAlchemy URL. |
 | `FRONTEND_DIST` | `frontend/dist` | Built SPA location. |
@@ -250,14 +254,16 @@ Nothing is sent to a third party.
 python3 scripts/fetch_geoip.py geoip     # DB-IP Lite, refreshed monthly
 ```
 
-The script tries the current month and falls back two months. It also picks a working TLS
-trust store automatically (certifi, then the usual system bundles), because some python.org
-builds ship a stale one. If a proxy intercepts TLS, pass `--ca-file /path/to/bundle.pem` (or
+The script fetches both the country and ASN databases (use `--no-asn` to skip the latter).
+The ASN database is what lets sender identities show a network/organisation; without it the
+grouping still works using envelope/DKIM domains and PTR. The script tries the current month
+and falls back two months, and picks a working TLS trust store automatically (certifi, then
+the usual system bundles), because some python.org builds ship a stale one. If a proxy intercepts TLS, pass `--ca-file /path/to/bundle.pem` (or
 `--insecure` as a last resort). Restart the container after adding the file so the resolver
 picks it up. Without a database the app runs normally; countries render as *Unknown*.
 
 > IP Geolocation by [DB-IP](https://db-ip.com) (CC BY 4.0). MaxMind GeoLite2 also works —
-> point `GEOIP_DB` at the `.mmdb` file.
+> point `GEOIP_DB` / `GEOIP_ASN_DB` at the `.mmdb` files.
 
 ---
 
@@ -361,9 +367,10 @@ Everything below requires the session cookie (obtained via `POST /api/auth/login
 
 ## Roadmap
 
-v1.2 adds alerting over SMTP, Telegram, Signal and webhooks. Next up: unauthenticated
-read-only share links, export and retention. Sequencing, effort estimates and the decisions
-behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
+v1.2 added alerting over SMTP, Telegram, Signal and webhooks; v1.3 adds sender identities
+and period-over-period changes. Next up: coverage and anomaly scoring, then read-only share
+links, export and retention. Sequencing, effort estimates and the
+decisions behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
 
@@ -371,7 +378,7 @@ behind them live in [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (72 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts)
+# backend tests (75 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build

@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+from datetime import datetime, timedelta, timezone
+
 from fastapi.testclient import TestClient
+from sqlmodel import Session, select
+
+from app.models import Domain, Report, SourceRecord
 
 from .conftest import sample
 
@@ -138,6 +144,79 @@ def test_tls_endpoints(auth_client: TestClient):
     assert listing["total"] == 2
     detail = auth_client.get(f"/api/tls/reports/{listing['items'][0]['id']}").json()
     assert detail["failure_details"] or detail["failure"] == 0
+
+
+def test_dashboard_report_gap(auth_client: TestClient):
+    upload_all(auth_client)
+    data = auth_client.get("/api/dashboard").json()
+    gaps = {gap["domain"]: gap for gap in data["report_gaps"]}
+    assert "tgm.rocks" in gaps
+    assert gaps["tgm.rocks"]["hours"] > gaps["tgm.rocks"]["expected_hours"]
+
+
+def test_dashboard_identities(auth_client: TestClient):
+    upload_all(auth_client)
+    data = auth_client.get("/api/dashboard").json()
+    identities = data["identities"]
+    assert identities["total"] >= 3
+    assert sum(item["messages"] for item in identities["items"]) == data["kpis"]["messages"]
+    tgm_items = [item for item in identities["items"] if item["label"] == "tgm.rocks"]
+    assert sum(item["messages"] for item in tgm_items) >= 11
+    assert sum(item["sources"] for item in tgm_items) >= 2
+    assert all(0 <= item["aligned_pct"] <= 100 for item in identities["items"])
+    assert "changes" in data and "chips" in data["changes"]
+
+
+def test_dashboard_changes(auth_client: TestClient, session: Session):
+    upload_all(auth_client)
+    domain = session.exec(select(Domain).where(Domain.name == "tgm.rocks")).one()
+    now = datetime.now(timezone.utc)
+    begin = now - timedelta(days=45)
+    report = Report(
+        domain_id=domain.id,
+        org_name="google.com",
+        report_id="old-tgm-report",
+        policy_domain="tgm.rocks",
+        date_begin=begin,
+        date_end=begin + timedelta(days=1),
+        report_date=begin.date(),
+        policy_p="reject",
+        message_count=50,
+        aligned_count=40,
+        failed_count=10,
+        record_count=1,
+        source_count=1,
+        raw_sha256=hashlib.sha256(b"old-tgm").hexdigest(),
+        raw_xml=b"<feedback/>",
+    )
+    session.add(report)
+    session.commit()
+    session.refresh(report)
+    session.add(
+        SourceRecord(
+            report_id=report.id,
+            domain_id=domain.id,
+            report_date=begin.date(),
+            source_ip="203.0.113.9",
+            message_count=50,
+            dkim_pass=True,
+            spf_pass=True,
+            dkim_signed=True,
+            dkim_auth_pass=True,
+            spf_auth_pass=True,
+            dkim_domains=["tgm.rocks"],
+            dkim_selectors=["selector"],
+            dkim_results=["pass"],
+            spf_domains=["tgm.rocks"],
+            spf_results=["pass"],
+        )
+    )
+    session.commit()
+
+    changes = auth_client.get("/api/dashboard?days=30").json()["changes"]
+    assert changes["available"] is True
+    assert {chip["key"] for chip in changes["chips"]} == {"messages", "aligned", "sources", "identities"}
+    assert changes["chips"][0]["display"].endswith("%")
 
 
 def test_dashboard_all_domains(auth_client: TestClient):
