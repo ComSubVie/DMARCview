@@ -1,0 +1,137 @@
+import type {
+  Dashboard,
+  IngestStatus,
+  Meta,
+  ProbeResult,
+  ReportDetail,
+  ReportsPage,
+  TlsDashboard,
+  TlsReportDetail,
+} from "./types";
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const BASE = "/api";
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(`${BASE}${path}`, {
+    credentials: "same-origin",
+    headers:
+      init.body instanceof FormData
+        ? { Accept: "application/json", ...(init.headers ?? {}) }
+        : { "Content-Type": "application/json", Accept: "application/json", ...(init.headers ?? {}) },
+    ...init,
+  });
+
+  if (response.status === 401 && !path.startsWith("/auth/login")) {
+    window.dispatchEvent(new Event("dmarc:unauthorized"));
+    throw new ApiError("Not signed in", 401);
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail =
+      payload && typeof payload === "object" && "detail" in payload
+        ? String((payload as { detail: unknown }).detail)
+        : `Request failed (${response.status})`;
+    throw new ApiError(detail, response.status);
+  }
+  return payload as T;
+}
+
+function query(params: Record<string, string | number | undefined | null>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      search.set(key, String(value));
+    }
+  }
+  const text = search.toString();
+  return text ? `?${text}` : "";
+}
+
+export const api = {
+  me: () => request<{ authenticated: boolean; username: string | null }>("/auth/me"),
+  login: (username: string, password: string) =>
+    request<{ authenticated: boolean; username: string }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+
+  meta: () => request<Meta>("/meta"),
+  dashboard: (domain: string, days: number) =>
+    request<Dashboard>(`/dashboard${query({ domain, days })}`),
+  reports: (params: {
+    domain?: string;
+    page?: number;
+    page_size?: number;
+    q?: string;
+    days?: number;
+  }) => request<ReportsPage>(`/reports${query(params)}`),
+  report: (id: number) => request<ReportDetail>(`/reports/${id}`),
+  tls: (domain: string, days: number) => request<TlsDashboard>(`/tls${query({ domain, days })}`),
+  tlsReport: (id: number) => request<TlsReportDetail>(`/tls/reports/${id}`),
+
+  domainHealth: (domain: string) =>
+    request<import("./types").DomainHealth>(`/domain-health${query({ domain })}`),
+  runDomainHealth: (domain: string) =>
+    request<import("./types").DomainHealth>(`/domain-health/run${query({ domain })}`, {
+      method: "POST",
+    }),
+  fleetHealth: () =>
+    request<{ items: import("./types").FleetHealthItem[] }>("/domain-health/fleet"),
+  domainSettings: (domain: string) =>
+    request<import("./types").DomainSettings>(
+      `/domains/${encodeURIComponent(domain)}/settings`,
+    ),
+  saveDomainSettings: (
+    domain: string,
+    payload: {
+      dkim_selectors?: string[];
+      probe_targets?: string[];
+      expected_report_hours?: number;
+      dns_checks_enabled?: boolean;
+    },
+  ) =>
+    request<import("./types").DomainSettings>(
+      `/domains/${encodeURIComponent(domain)}/settings`,
+      { method: "PUT", body: JSON.stringify(payload) },
+    ),
+  storage: () => request<import("./types").StorageInfo>("/storage"),
+  jobs: () => request<import("./types").JobsResponse>("/jobs"),
+
+  ingestStatus: () => request<IngestStatus>("/ingest/status"),
+  syncNow: () => request<{ started: boolean }>("/ingest/run", { method: "POST" }),
+  probe: () => request<ProbeResult>("/ingest/probe", { method: "POST" }),
+  upload: async (files: FileList | File[]) => {
+    const form = new FormData();
+    for (const file of Array.from(files)) {
+      form.append("files", file);
+    }
+    return request<{
+      files: number;
+      reports: number;
+      tls_reports: number;
+      duplicates: number;
+      ignored: number;
+      errors: string[];
+      items: { file: string; status: string; reports: number; tls_reports: number }[];
+    }>("/ingest/upload", { method: "POST", body: form });
+  },
+};
+
+export function rawReportUrl(id: number): string {
+  return `${BASE}/reports/${id}/raw`;
+}
+
+export function rawTlsReportUrl(id: number): string {
+  return `${BASE}/tls/reports/${id}/raw`;
+}

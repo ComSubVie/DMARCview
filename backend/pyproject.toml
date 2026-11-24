@@ -1,0 +1,35 @@
+[project]
+name = "dmarcview"
+version = "1.1.4"
+description = "Self-hosted DMARC and TLS-RPT reporting dashboard for Stalwart"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.165.0",
+  "uvicorn[standard]==0.54.0",
+  "sqlmodel==0.0.50",
+  "sqlalchemy==2.1.9",
+  "httpx==0.28.1",
+  "itsdangerous==2.2.0",
+  "python-multipart==0.0.34",
+  "maxminddb==3.3.0",
+  "alembic==1.20.1",
+  "dnspython==2.9.2",
+  "cryptography==50.0.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "SIM"]
+# FastAPI uses function calls (Depends/Query/File) as defaults on purpose.
+ignore = ["B008"]

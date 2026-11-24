@@ -1,0 +1,174 @@
+"""Application configuration.
+
+Everything is driven by environment variables so the same image can run in
+Docker, behind systemd, or from a checkout.  A small ``.env`` loader keeps the
+developer experience pleasant without adding a dependency.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent  # backend/
+REPO_DIR = BASE_DIR.parent
+
+
+def _load_dotenv() -> None:
+    """Load ``.env`` from the repo or backend directory without overriding env."""
+    if os.environ.get("APP_ENV", "").strip().lower() == "test":
+        # Tests must never depend on the developer's or operator's .env file.
+        return
+    for candidate in (REPO_DIR / ".env", BASE_DIR / ".env"):
+        if not candidate.is_file():
+            continue
+        try:
+            content = candidate.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("'\"")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+def _env(name: str, default: str = "") -> str:
+    return os.environ.get(name, default).strip()
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(_env(name, str(default)))
+    except ValueError:
+        return default
+
+
+@dataclass(frozen=True)
+class Settings:
+    env: str = "development"
+    secret_key: str = "dev-insecure-secret-change-me"
+    admin_username: str = "admin"
+    admin_password: str = ""
+    admin_password_hash: str = ""
+    cookie_secure: bool = False
+    session_max_age: int = 14 * 24 * 3600
+
+    database_url: str = ""
+    data_dir: Path = field(default_factory=lambda: REPO_DIR / "data")
+
+    jmap_enabled: bool = False
+    jmap_url: str = ""
+    jmap_username: str = ""
+    jmap_password: str = ""
+    jmap_token: str = ""
+    jmap_mailbox: str = "DMARC"
+    jmap_poll_seconds: int = 300
+    ingest_initial_days: int = 90
+
+    geoip_db: str = ""
+    monthly_message_alert: int = 10000
+
+    #: Comma-separated resolver addresses; empty uses the system resolver.
+    dns_nameservers: str = ""
+    health_checks_enabled: bool = True
+    health_interval_minutes: int = 360
+    probe_interval_minutes: int = 360
+    probe_timeout_seconds: float = 8.0
+    http_timeout_seconds: float = 6.0
+    ptr_enrichment_enabled: bool = True
+    backup_keep: int = 14
+    jobs_initial_delay_seconds: int = 25
+
+    frontend_dist: str = ""
+    ingest_token: str = ""
+
+    #: Set when the app is served under a path prefix (e.g. /dmarc).
+    root_path: str = ""
+
+    @property
+    def db_path(self) -> Path | None:
+        url = self.database_url
+        if not url:
+            return self.data_dir / "dmarc.db"
+        if url.startswith("sqlite"):
+            _, _, path = url.partition(":///")
+            return Path(path)
+        return None
+
+    @property
+    def sqlalchemy_url(self) -> str:
+        if self.database_url:
+            return self.database_url
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        return f"sqlite:///{self.data_dir / 'dmarc.db'}"
+
+    @property
+    def dist_dir(self) -> Path:
+        if self.frontend_dist:
+            return Path(self.frontend_dist)
+        return REPO_DIR / "frontend" / "dist"
+
+    @property
+    def has_credentials(self) -> bool:
+        return bool(self.admin_password or self.admin_password_hash)
+
+
+def _build_settings() -> Settings:
+    _load_dotenv()
+    data_dir = Path(_env("DATA_DIR") or (REPO_DIR / "data"))
+    return Settings(
+        env=_env("APP_ENV", "development"),
+        secret_key=_env("SECRET_KEY", "dev-insecure-secret-change-me"),
+        admin_username=_env("ADMIN_USERNAME", "admin"),
+        admin_password=_env("ADMIN_PASSWORD"),
+        admin_password_hash=_env("ADMIN_PASSWORD_HASH"),
+        cookie_secure=_env_bool("COOKIE_SECURE", False),
+        session_max_age=_env_int("SESSION_MAX_AGE", 14 * 24 * 3600),
+        database_url=_env("DATABASE_URL"),
+        data_dir=data_dir,
+        jmap_enabled=_env_bool("JMAP_ENABLED", False),
+        jmap_url=_env("JMAP_URL"),
+        jmap_username=_env("JMAP_USERNAME"),
+        jmap_password=_env("JMAP_PASSWORD"),
+        jmap_token=_env("JMAP_TOKEN"),
+        jmap_mailbox=_env("JMAP_MAILBOX", "DMARC"),
+        jmap_poll_seconds=max(30, _env_int("JMAP_POLL_SECONDS", 300)),
+        ingest_initial_days=max(1, _env_int("INGEST_INITIAL_DAYS", 90)),
+        geoip_db=_env("GEOIP_DB"),
+        monthly_message_alert=_env_int("MONTHLY_MESSAGE_ALERT", 10000),
+        dns_nameservers=_env("DNS_NAMESERVERS"),
+        health_checks_enabled=_env_bool("HEALTH_CHECKS_ENABLED", True),
+        health_interval_minutes=max(15, _env_int("HEALTH_INTERVAL_MINUTES", 360)),
+        probe_interval_minutes=max(15, _env_int("PROBE_INTERVAL_MINUTES", 360)),
+        probe_timeout_seconds=float(_env("PROBE_TIMEOUT_SECONDS", "8") or 8),
+        http_timeout_seconds=float(_env("HTTP_TIMEOUT_SECONDS", "6") or 6),
+        ptr_enrichment_enabled=_env_bool("PTR_ENRICHMENT_ENABLED", True),
+        backup_keep=max(0, _env_int("BACKUP_KEEP", 14)),
+        jobs_initial_delay_seconds=max(5, _env_int("JOBS_INITIAL_DELAY_SECONDS", 25)),
+        frontend_dist=_env("FRONTEND_DIST"),
+        ingest_token=_env("INGEST_TOKEN"),
+        root_path=_env("ROOT_PATH").rstrip("/"),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return _build_settings()
+
+
+def reset_settings_cache() -> None:
+    get_settings.cache_clear()

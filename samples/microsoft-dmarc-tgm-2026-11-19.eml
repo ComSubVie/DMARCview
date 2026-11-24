@@ -1,0 +1,42 @@
+Received: from EUR03-VE1-obe.outbound.protection.outlook.com
+ (mail-eur03on0125.outbound.protection.outlook.com [40.92.19.44]) by
+ mx.google.com with ESMTPS id e9si5566778ejc.22.2026.11.20.01.05.44 for
+ <dmarc@tgm.rocks> (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384
+ bits=256/256); Thu, 20 Nov 2026 01:05:44 +0000 (UTC)
+From: dmarcreport@microsoft.com
+To: dmarc@tgm.rocks
+Subject: Report domain: tgm.rocks Submitter: microsoft.com Report-ID:
+ <tgm-2026-11-19-outlook>
+Date: Fri, 20 Nov 2026 01:05:44 +0000
+Message-ID: <DM6PR04MB4321A1B2C3D4E5F60718293@microsoft.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============7971304123120208734=="
+
+--===============7971304123120208734==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+DMARC aggregate report for tgm.rocks is attached as a gzip-compressed XML fil=
+e.
+
+--===============7971304123120208734==
+Content-Type: application/gzip
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename="tgm.rocks!1795046400!1795132800.xml.gz"
+
+H4sIAAAAAAAC/+1WTW/bMAy991cYuceO0yRdAkftsGG3XYbtbCgynWi1RU2S03a/flRlO04/sm4Y
+0GHYKfYjRT4+PRrJLm/rKtqDsRLVepTGk1EESmAh1XY9+vL5w/jN6JKdZSVAseHiOqJ0ZdejxqiV
+BFeuNDe8tiuCV8quipobMfZV2FkUZW1dRkCWdC8+YECjcXkNjhfccY8RimabK14Dq6UwaLF0scA6
+S3o8pEHNZcXuW4U6Vw/yQ0KbfOsMzwUqx4XLpSqR7ZzTdpUkFlQBJsaylAL8yYSOPk4PdVrGsmBu
+W4+nk+linKbjdDnGxlWI11lyyAgnaDDIDVfbljdBG9hKUuNiOZ/MFrMJiRKQLk6E7qPp+fSNj/r3
+UCw5rtZ3GyqYaaykuMt1s6mk3UFPBEkP5XnHBsW1pWIBCWFeXMuaERoeWtDq8h7zvwHSzMBXEC5L
+dItYzb41dP/KSQVZYjtcC8dSz98/BIh0TLMkqEn4E0RJYYGm42zwplfFYmME5FKzxTRO00Wcnk/i
+6Zwa9oEuVWCjHKNQeOjgth/sedWQjkUX8OJIq9FK552p0I8xRAZ5XhvNrVevl6lVoWwDvVaDGR/0
+pIvrJstkAaRcKWkv+mM74OTJvDRYDy9sCB/MsocKNQR0QwMLuBqcOY4/OuWQPZXsOsMnj+hlvHG7
+3IBtKndg/ECN02YLgkFFNkLDrOPVDTfkqB46ZIU+rbLtSy/usGk2kP1lBE6WPhg+eTivT+48+hK7
+zibxkhy7jGez582a/qZZu2U8YdeSPoNP2jUEjnUzwC2qyN1pWI8qFLzKA5PRIemedF2TL1j4eEYK
+XeRlQiO/QxFt7qJ+qaP3H99+eheFIn7IcPDQMQktX21lSDcsr2Avqxhuea0reOWlOaZyYm/SUxsT
+LvfXN+Yn3U9W/4NLk86X9IGfx9PpLE4vnt+b879hb/579h/3LP1naf/5srMfncOBciwLAAA=
+
+--===============7971304123120208734==--

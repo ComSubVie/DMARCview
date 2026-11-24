@@ -1,0 +1,90 @@
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com.
+ [209.85.220.41]) by mx.google.com with SMTPS id
+ f31sor112233wrx.9.2026.11.20.00.31.08 for <dmarc@tgm.rocks> (Google Transport
+ Security); Thu, 20 Nov 2026 00:31:08 -0800 (PST)
+From: noreply-dmarc-support@google.com
+To: dmarc@tgm.rocks
+Subject: Report domain: aeroclub.example Submitter: google.com Report-ID:
+ <aeroclub-2026-11-19-google>
+Date: Fri, 20 Nov 2026 08:31:08 +0000
+Message-ID: <dmarc-aggregate-aeroclub-2026-11-19-9c0d4e7f@google.com>
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+<?xml version="1.0" encoding="UTF-8"?>
+<feedback>
+  <version>1.0</version>
+  <report_metadata>
+    <org_name>google.com</org_name>
+    <email>noreply-dmarc-support@google.com</email>
+    <report_id>aeroclub-2026-11-19-google</report_id>
+    <date_range>
+      <begin>1795046400</begin>
+      <end>1795132800</end>
+    </date_range>
+  </report_metadata>
+  <policy_published>
+    <domain>aeroclub.example</domain>
+    <adkim>r</adkim>
+    <aspf>r</aspf>
+    <p>none</p>
+    <sp>none</sp>
+    <pct>100</pct>
+    <fo>0</fo>
+  </policy_published>
+  <record>
+    <row>
+      <source_ip>62.116.130.25</source_ip>
+      <count>4</count>
+      <policy_evaluated>
+        <disposition>none</disposition>
+        <dkim>pass</dkim>
+        <spf>pass</spf>
+      </policy_evaluated>
+    </row>
+    <identifiers>
+      <header_from>aeroclub.example</header_from>
+      <envelope_from>bounce@aeroclub.example</envelope_from>
+      <envelope_to>aeroclub.example</envelope_to>
+    </identifiers>
+    <auth_results>
+      <dkim>
+        <domain>aeroclub.example</domain>
+        <selector>aeroclub</selector>
+        <result>pass</result>
+      </dkim>
+      <spf>
+        <domain>aeroclub.example</domain>
+        <result>pass</result>
+      </spf>
+    </auth_results>
+  </record>
+  <record>
+    <row>
+      <source_ip>185.199.108.153</source_ip>
+      <count>1</count>
+      <policy_evaluated>
+        <disposition>none</disposition>
+        <dkim>fail</dkim>
+        <spf>fail</spf>
+      </policy_evaluated>
+    </row>
+    <identifiers>
+      <header_from>aeroclub.example</header_from>
+      <envelope_from>news@mailer.example</envelope_from>
+      <envelope_to>aeroclub.example</envelope_to>
+    </identifiers>
+    <auth_results>
+      <dkim>
+        <domain>mailer.example</domain>
+        <selector>s1</selector>
+        <result>fail</result>
+      </dkim>
+      <spf>
+        <domain>mailer.example</domain>
+        <result>fail</result>
+      </spf>
+    </auth_results>
+  </record>
+</feedback>

@@ -1,0 +1,51 @@
+Received: from EUR03-VE1-obe.outbound.protection.outlook.com
+ (mail-eur03on0125.outbound.protection.outlook.com [40.92.19.44]) by
+ mx.google.com with ESMTPS id h12si8899001ejc.17.2026.11.20.01.11.02 for
+ <dmarc@tgm.rocks> (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384
+ bits=256/256); Thu, 20 Nov 2026 01:11:02 +0000 (UTC)
+From: dmarcreport@microsoft.com
+To: dmarc@tgm.rocks
+Subject: Report domain: tgm.rocks Submitter: microsoft.com Report-ID:
+ <tgm-2026-11-19-microsoft-tls>
+Date: Fri, 20 Nov 2026 01:11:02 +0000
+Message-ID: <DM6PR04MB4321F6E5D4C3B2A19081726@microsoft.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============3833734777138215430=="
+
+--===============3833734777138215430==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+TLS-RPT report for tgm.rocks is attached as JSON.
+
+--===============3833734777138215430==
+Content-Type: application/tlsrpt+json
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename="microsoft.com!tgm.rocks!1795046400!1795132800.json"
+
+ewogICJvcmdhbml6YXRpb24tbmFtZSI6ICJtaWNyb3NvZnQuY29tIiwKICAiZGF0ZS1yYW5nZSI6
+IHsKICAgICJzdGFydC1kYXRldGltZSI6ICIyMDI2LTExLTE5VDAwOjAwOjAwWiIsCiAgICAiZW5k
+LWRhdGV0aW1lIjogIjIwMjYtMTEtMjBUMDA6MDA6MDBaIgogIH0sCiAgInJlcG9ydC1pZCI6ICJ0
+Z20tMjAyNi0xMS0xOS1taWNyb3NvZnQtdGxzIiwKICAiY29udGFjdC1pbmZvIjogIm1haWx0bzpk
+bWFyY0B0Z20ucm9ja3MiLAogICJwb2xpY2llcyI6IFsKICAgIHsKICAgICAgInBvbGljeSI6IHsK
+ICAgICAgICAicG9saWN5LXR5cGUiOiAic3RzIiwKICAgICAgICAicG9saWN5LXN0cmluZyI6IFsK
+ICAgICAgICAgICJ2ZXJzaW9uOiBTVFN2MSIsCiAgICAgICAgICAibW9kZTogZW5mb3JjZSIsCiAg
+ICAgICAgICAibXg6IG1haWwudGdtLnJvY2tzIiwKICAgICAgICAgICJtYXhfYWdlOiA2MDQ4MDAi
+CiAgICAgICAgXSwKICAgICAgICAicG9saWN5LWRvbWFpbiI6ICJ0Z20ucm9ja3MiLAogICAgICAg
+ICJteC1ob3N0IjogWwogICAgICAgICAgIm1haWwudGdtLnJvY2tzIgogICAgICAgIF0KICAgICAg
+fSwKICAgICAgInN1bW1hcnkiOiB7CiAgICAgICAgInRvdGFsLXN1Y2Nlc3NmdWwtc2Vzc2lvbi1j
+b3VudCI6IDcsCiAgICAgICAgInRvdGFsLWZhaWx1cmUtc2Vzc2lvbi1jb3VudCI6IDMKICAgICAg
+fSwKICAgICAgImZhaWx1cmUtZGV0YWlscyI6IFsKICAgICAgICB7CiAgICAgICAgICAicmVzdWx0
+LXR5cGUiOiAiY2VydGlmaWNhdGUtZXhwaXJlZCIsCiAgICAgICAgICAic2VuZGluZy1tdGEtaXAi
+OiAiNDAuOTIuMTkuNDQiLAogICAgICAgICAgInJlY2VpdmluZy1teCI6ICJtYWlsLnRnbS5yb2Nr
+cyIsCiAgICAgICAgICAiZmFpbGVkLXNlc3Npb24tY291bnQiOiAyLAogICAgICAgICAgImFkZGl0
+aW9uYWwtaW5mbyI6ICJjZXJ0aWZpY2F0ZSBleHBpcmVkIDIwMjYtMTEtMTciLAogICAgICAgICAg
+ImZhaWx1cmUtcmVhc29uLWNvZGUiOiAiY2VydGlmaWNhdGUtZXhwaXJlZCIKICAgICAgICB9LAog
+ICAgICAgIHsKICAgICAgICAgICJyZXN1bHQtdHlwZSI6ICJzdGFydHRscy1ub3Qtc3VwcG9ydGVk
+IiwKICAgICAgICAgICJzZW5kaW5nLW10YS1pcCI6ICIxNTkuMTM1LjIyNC4xNyIsCiAgICAgICAg
+ICAicmVjZWl2aW5nLW14IjogIm1haWwudGdtLnJvY2tzIiwKICAgICAgICAgICJmYWlsZWQtc2Vz
+c2lvbi1jb3VudCI6IDEsCiAgICAgICAgICAiZmFpbHVyZS1yZWFzb24tY29kZSI6ICJzdGFydHRs
+cy1ub3Qtc3VwcG9ydGVkIgogICAgICAgIH0KICAgICAgXQogICAgfQogIF0KfQo=
+
+--===============3833734777138215430==--

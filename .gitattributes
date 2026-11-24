@@ -1,0 +1,7 @@
+# RFC 5322 report fixtures are CRLF by design — never normalise them.
+*.eml -text
+
+# Binary assets.
+*.png binary
+*.woff2 binary
+*.mmdb binary

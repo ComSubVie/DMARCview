@@ -1,0 +1,106 @@
+{
+  "reports": [
+    {
+      "file": "google-dmarc-tgm-2026-11-18.eml",
+      "kind": "dmarc",
+      "org_name": "google.com",
+      "domain": "tgm.rocks",
+      "report_id": "tgm-2026-11-18-google",
+      "date_begin": "2026-11-18T00:00:00Z",
+      "date_end": "2026-11-19T00:00:00Z",
+      "message_count": 8,
+      "aligned_count": 6,
+      "failed_count": 2,
+      "record_count": 2,
+      "policy": {
+        "p": "reject",
+        "sp": "reject",
+        "pct": 100,
+        "adkim": "r",
+        "aspf": "r"
+      }
+    },
+    {
+      "file": "microsoft-dmarc-tgm-2026-11-19.eml",
+      "kind": "dmarc",
+      "org_name": "microsoft.com",
+      "domain": "tgm.rocks",
+      "report_id": "tgm-2026-11-19-outlook",
+      "date_begin": "2026-11-19T00:00:00Z",
+      "date_end": "2026-11-20T00:00:00Z",
+      "message_count": 9,
+      "aligned_count": 5,
+      "failed_count": 4,
+      "record_count": 3,
+      "policy": {
+        "p": "reject",
+        "sp": "quarantine",
+        "pct": 100,
+        "adkim": "s",
+        "aspf": "s"
+      }
+    },
+    {
+      "file": "google-dmarc-aeroclub-2026-11-19.eml",
+      "kind": "dmarc",
+      "org_name": "google.com",
+      "domain": "aeroclub.example",
+      "report_id": "aeroclub-2026-11-19-google",
+      "date_begin": "2026-11-19T00:00:00Z",
+      "date_end": "2026-11-20T00:00:00Z",
+      "message_count": 5,
+      "aligned_count": 4,
+      "failed_count": 1,
+      "record_count": 2,
+      "policy": {
+        "p": "none",
+        "sp": "none",
+        "pct": 100,
+        "adkim": "r",
+        "aspf": "r"
+      }
+    }
+  ],
+  "tls_reports": [
+    {
+      "file": "google-tlsrpt-tgm-2026-11-18.eml",
+      "org_name": "google.com",
+      "domain": "tgm.rocks",
+      "report_id": "tgm-2026-11-18-google-tls",
+      "total_success": 12,
+      "total_failure": 0,
+      "policy_type": "sts",
+      "mode": "enforce",
+      "mx_hosts": [
+        "mail.tgm.rocks"
+      ]
+    },
+    {
+      "file": "microsoft-tlsrpt-tgm-2026-11-19.eml",
+      "org_name": "microsoft.com",
+      "domain": "tgm.rocks",
+      "report_id": "tgm-2026-11-19-microsoft-tls",
+      "total_success": 7,
+      "total_failure": 3,
+      "policy_type": "sts",
+      "mode": "enforce",
+      "mx_hosts": [
+        "mail.tgm.rocks"
+      ]
+    }
+  ],
+  "expected_state": {
+    "domains": [
+      "tgm.rocks",
+      "aeroclub.example"
+    ],
+    "total_dmarc_messages": 22,
+    "tgm_rocks_messages": 17,
+    "tgm_rocks_aligned": 11,
+    "tgm_rocks_failed": 6,
+    "distinct_source_ips": 5,
+    "tls_total_sessions": 22,
+    "tls_failed_sessions": 3
+  },
+  "noise_file": "newsletter-noise.eml"
+}

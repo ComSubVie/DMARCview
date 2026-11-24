@@ -1,0 +1,45 @@
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com.
+ [209.85.220.41]) by mx.google.com with SMTPS id
+ d12sor998877wrx.31.2026.11.19.00.12.37 for <dmarc@tgm.rocks> (Google
+ Transport Security); Wed, 19 Nov 2026 00:12:37 -0800 (PST)
+From: noreply-dmarc-support@google.com
+To: dmarc@tgm.rocks
+Subject: Report domain: tgm.rocks Submitter: google.com Report-ID:
+ <tgm-2026-11-18-google>
+Date: Thu, 19 Nov 2026 08:12:37 +0000
+Message-ID: <dmarc-aggregate-tgm-2026-11-18-4f7c1a2b@google.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============5166485824935272313=="
+
+--===============5166485824935272313==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+This is an aggregate DMARC report in XML format, compressed as a ZIP archive.
+The report is attached.
+
+--===============5166485824935272313==
+Content-Type: application/zip
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename="google.com!tgm.rocks!1794960000!1795046400.zip"
+
+UEsDBBQAAAAIAHNSeF16uw2N1gIAAFkJAAAuAAAAZ29vZ2xlLmNvbSF0Z20ucm9ja3MhMTc5NDk2
+MDAwMCExNzk1MDQ2NDAwLnhtbMVWS2/iMBC+91dE3IlJFliKgttTzyvt7jkyySR4m9iW7bTl3+8Y
+Ow8oiyqtqnIh/ub9zYyT7OGtbaIX0IZLsZsl8WIWgShkyUW9m/3+9TTfzB7oXVYBlHtWPEeoLsxu
+1mmx5WCrrWKatWaL8FaYbdkyXcxT9ELvoigLfim6zUh/cAINSmqbt2BZySxzGKJS17lgLdBayrqB
+uJBtRgbQ60DLeEOFRA/Nce7jmU45d49TM68XbN6sZnkhhWWFzbmoJD1Yq8yWkGAaj6aEESbMK2iS
+Ltfr1QYzv2LvHYcyeElt3c7TRbqeJ8k82cy9u4yMCt4Ai4VcM1GHchDaQ82Roe/3y/v1An8Z8Ugv
+B1E66WqxXC+d1J29M3LpLQOtpaY/fzxF8MKajlnkO6qkjuCNtQrrE2AjDRa7B2VkoVUVsnTSSKMW
+jGE1GAxxcuP6RK40KlOy4cUxV92+4eYAQ20SKReOiVjL4hn9BMSLWfnMW6oz4h8CaFR1wty/hxTV
+8AcKmxEVEDNCpsdUYWni6HAPHsKu4Nn3BvErSWK/Cqn7fLV8HUg2stMF5FzRdRonyTpOvi3idIUB
+B0GvWshOWLrOiH/o4RAv8N6T4onhRknDXTNwcAWOxRSZ6DleFDOOuYGiwEAVBANPkxovYmLT+soy
+XoKwvOK4eoPZAVgJOq+0bKfNmsLj7L1AIxV4dI8FF/A4sTmXv7Oykl5Ttv36kHfpZayzh1yD6Ro7
+ZnzBxu1B84RBg/OCQ2wsa16ZdqPTQ6OWjxOYDYeB3GnQbEL7xxK46XocdnJZr1PuZ/Qj45ou7uPN
+Kk7TRbxM/j2u6WeNq7s/ro6rF5zzpoEZvJDsUcFuhpcONqaEcjZqnPJtWxwKGm6jaFCL9seza8zd
+7/iSinC9ravOm43BiI/2ZdvSJ64fJ1l/8cqcZXJjaZJb6+I7e3NdPnlhP5DB1YW9Xf7/ryy+fcJn
+Er37C1BLAQIUAxQAAAAIAHNSeF16uw2N1gIAAFkJAAAuAAAAAAAAAAAAAACAAQAAAABnb29nbGUu
+Y29tIXRnbS5yb2NrcyExNzk0OTYwMDAwITE3OTUwNDY0MDAueG1sUEsFBgAAAAABAAEAXAAAACID
+AAAAAA==
+
+--===============5166485824935272313==--

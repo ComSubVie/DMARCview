@@ -1,0 +1,33 @@
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com.
+ [209.85.220.41]) by mx.google.com with SMTPS id
+ g77sor445566wrx.4.2026.11.19.00.19.51 for <dmarc@tgm.rocks> (Google Transport
+ Security); Wed, 19 Nov 2026 00:19:51 -0800 (PST)
+From: noreply-dmarc-support@google.com
+To: dmarc@tgm.rocks
+Subject: Report domain: tgm.rocks Submitter: google.com Report-ID:
+ <tgm-2026-11-18-google-tls>
+Date: Thu, 19 Nov 2026 08:19:51 +0000
+Message-ID: <tlsrpt-tgm-2026-11-18-7b3e9d10@google.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============6500382217578112926=="
+
+--===============6500382217578112926==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+This is a TLS-RPT report in JSON format, gzip-compressed as an attachment.
+
+--===============6500382217578112926==
+Content-Type: application/tlsrpt+gzip
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename="google.com!tgm.rocks!1794960000!1795046400.json.gz"
+
+H4sIAAAAAAAC/22STW6DMBCF95wCsY6RQVWUsuodklWrqLKM41rFHmQPUdIod++Yn4RCJQTWvG/m
+PY+4JWmagdfCmR+BBhxzwqqsSjMNoBuVS7DZJkK1QMW8cDqqN6pQLaDwyKKCZugqebllRcGK3YHz
+qn/e+36ilav/Z19nLKH33s+rFmi4qSOK2rLnaDZkY9iEIZsEh0IS7E4QcStMg1DVVnj5Rr25B/k9
+si00RhoViPvocw13mZTr43azGsNr20cOGMbbzNWA3jj9GDiKZ+UDLbRK94f9uZi1kWahVlWqKK6X
+aiFdqjTmz//mfuri8ik0dW/5y47z7KEd18FqoEluXOBqGFmxLwi4DL5wfxqMp/s0IgudpRUvVoaA
+omGhk1KFcOroSN/4Z0noXDQrys2SPpFl59UK5ZNlMr2PyT35BZ0zVoe1AgAA
+
+--===============6500382217578112926==--

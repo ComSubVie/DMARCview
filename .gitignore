@@ -1,0 +1,32 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Runtime data
+data/*.db
+data/*.db-*
+data/*.db-wal
+data/*.db-shm
+data/geoip/*.mmdb
+geoip/*.mmdb
+*.log
+
+# Local config
+.env
+.env.local
+
+.DS_Store
+
+# TS build info
+*.tsbuildinfo
+
+# Local buildx/docker config used for verification
+.docker-config/
+.buildx-config/
