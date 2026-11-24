@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { Drawer } from "../components/Drawer";
+import { OverridesDrawer } from "../components/OverridesDrawer";
 import { Badge, EmptyState, Skeleton } from "../components/ui";
 import { relativeTime } from "../lib/format";
 import { useData } from "../state";
@@ -152,11 +153,12 @@ function RuleDrawer({
 }
 
 export function AlertsPage() {
-  const { toast } = useData();
+  const { domain, toast } = useData();
   const [data, setData] = useState<AlertsPayload | null>(null);
   const [running, setRunning] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [editing, setEditing] = useState<AlertRuleItem | null>(null);
+  const [overrides, setOverrides] = useState(false);
 
   useEffect(() => {
     document.title = "DMARCView — Alerts";
@@ -308,7 +310,12 @@ export function AlertsPage() {
               <h2 className="card-title">Rules</h2>
               <p className="card-sub">Evaluated hourly in the background</p>
             </div>
-            <span className="chip violet">{data.rules.filter((rule) => rule.enabled).length} enabled</span>
+            <div className="timeline-head-actions">
+              <span className="chip violet">{data.rules.filter((rule) => rule.enabled).length} enabled</span>
+              <button className="btn ghost sm" type="button" onClick={() => setOverrides(true)}>
+                Domain overrides
+              </button>
+            </div>
           </div>
           <div className="card-body" style={{ paddingTop: 8, paddingBottom: 12 }}>
             <table className="data rules-table">
@@ -442,6 +449,12 @@ export function AlertsPage() {
         </div>
       </section>
 
+      {overrides ? (
+        <OverridesDrawer
+          initialDomain={domain ?? "all"}
+          onClose={() => setOverrides(false)}
+        />
+      ) : null}
       {editing ? (
         <RuleDrawer
           rule={editing}

@@ -11,6 +11,7 @@ from sqlalchemy import case, func, or_
 from sqlmodel import Session, select
 
 from ..analytics import volume_anomaly
+from ..expectations import matching_label
 from ..health.service import latest_probes
 from ..models import (
     Domain,
@@ -103,6 +104,8 @@ def new_source(session: Session, domain: Domain, cond: dict, now: datetime) -> l
     for ip, total, country in rows:
         total = int(total or 0)
         if total < int(cond["min_messages"]):
+            continue
+        if matching_label(session, domain.id, ip, since=start):
             continue
         overall = session.exec(
             select(func.min(SourceRecord.report_date)).where(

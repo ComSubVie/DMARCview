@@ -3664,8 +3664,8 @@ table.data td .primary-cell {
 .timeline-item {
   position: relative;
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 9px minmax(0, 1fr);
+  gap: 9px;
   padding: 12px 0;
   border-top: 1px solid var(--line);
 }
@@ -3675,12 +3675,11 @@ table.data td .primary-cell {
 }
 
 .timeline-dot {
-  width: 9px;
-  height: 9px;
-  margin: 6px auto 0;
+  width: 7px;
+  height: 7px;
+  margin: 7px auto 0;
   border-radius: 50%;
   background: #98a2b3;
-  box-shadow: 0 0 0 3px #f4f5fa;
 }
 
 .timeline-dot.annotation { background: var(--indigo); }
@@ -3758,6 +3757,96 @@ table.data td .primary-cell {
   }
 }
 
-.right {
+table.data th.right,
+table.data td.right {
   text-align: right;
+}
+
+/* Known senders */
+.expectation-form {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.expectation-form .field {
+  margin-top: 0;
+}
+
+.expectation-form .btn {
+  height: 42px;
+}
+
+.expectation-list {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.expectation-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.expectation-row code {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.expectation-row .close {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+
+@media (max-width: 760px) {
+  .expectation-form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .expectation-form .btn {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Alert overrides */
+.override-list {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.override-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.override-row .btn {
+  white-space: nowrap;
+}
+
+@media (max-width: 620px) {
+  .override-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .override-row .badge {
+    display: none;
+  }
+}
+
+.fleet-tag-filter {
+  height: 30px;
+  max-width: 180px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: 12px;
+  padding: 0 8px;
 }

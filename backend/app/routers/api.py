@@ -6,14 +6,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from .. import analytics
 from ..config import get_settings
 from ..db import get_session
 from ..deps import current_user
 from ..geoip import get_geo_resolver
-from ..models import Report, TlsReport
+from ..models import DomainTag, Report, TlsReport
 from ..version import VERSION
 
 router = APIRouter(prefix="/api", tags=["dashboard"], dependencies=[Depends(current_user)])
@@ -53,12 +53,27 @@ def domains(session: Session = Depends(get_session)) -> dict:
 class DomainProfilePayload(BaseModel):
     display_name: Optional[str] = Field(default=None, max_length=255)
     notes: Optional[str] = Field(default=None, max_length=4000)
+    tags: Optional[list[str]] = None
+
+
+def _tags(session: Session, domain_id: int) -> list[str]:
+    return [
+        tag.tag
+        for tag in session.exec(
+            select(DomainTag).where(DomainTag.domain_id == domain_id).order_by(DomainTag.tag)
+        ).all()
+    ]
 
 
 @router.get("/domains/{domain_name}/profile")
 def domain_profile(domain_name: str, session: Session = Depends(get_session)) -> dict:
     row = _domain_or_404(session, domain_name)
-    return {"name": row.name, "display_name": row.display_name, "notes": row.notes}
+    return {
+        "name": row.name,
+        "display_name": row.display_name,
+        "notes": row.notes,
+        "tags": _tags(session, row.id),
+    }
 
 
 @router.put("/domains/{domain_name}/profile")
@@ -73,9 +88,23 @@ def update_domain_profile(
     row.display_name = display_name or None
     row.notes = notes or None
     session.add(row)
+    if payload.tags is not None:
+        for old in session.exec(select(DomainTag).where(DomainTag.domain_id == row.id)).all():
+            session.delete(old)
+        seen: set[str] = set()
+        for raw in payload.tags[:12]:
+            value = raw.strip().lower()
+            if value and value not in seen:
+                seen.add(value)
+                session.add(DomainTag(domain_id=row.id, tag=value[:64]))
     session.commit()
     session.refresh(row)
-    return {"name": row.name, "display_name": row.display_name, "notes": row.notes}
+    return {
+        "name": row.name,
+        "display_name": row.display_name,
+        "notes": row.notes,
+        "tags": _tags(session, row.id),
+    }
 
 
 @router.get("/dashboard")

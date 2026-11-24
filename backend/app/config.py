@@ -93,6 +93,9 @@ class Settings:
     ptr_enrichment_enabled: bool = True
     backup_keep: int = 14
     retention_days: int = 0  # 0 = keep forever
+    digest_enabled: bool = False
+    digest_to: str = ""
+    digest_days: int = 7
     jobs_initial_delay_seconds: int = 25
 
     # Alerts
@@ -181,6 +184,9 @@ def _build_settings() -> Settings:
         http_timeout_seconds=float(_env("HTTP_TIMEOUT_SECONDS", "6") or 6),
         ptr_enrichment_enabled=_env_bool("PTR_ENRICHMENT_ENABLED", True),
         backup_keep=max(0, _env_int("BACKUP_KEEP", 14)),
+        digest_enabled=_env_bool("DIGEST_ENABLED", False),
+        digest_to=_env("DIGEST_TO"),
+        digest_days=max(1, min(31, _env_int("DIGEST_DAYS", 7))),
         jobs_initial_delay_seconds=max(5, _env_int("JOBS_INITIAL_DELAY_SECONDS", 25)),
         alerts_enabled=_env_bool("ALERTS_ENABLED", True),
         alert_interval_minutes=max(5, _env_int("ALERT_INTERVAL_MINUTES", 60)),

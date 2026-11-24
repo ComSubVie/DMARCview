@@ -8,7 +8,7 @@ from typing import Any, Optional
 from sqlmodel import Session, select
 
 from ..config import get_settings
-from ..models import AlertEvent, AlertRule, Domain, SyncState, utcnow
+from ..models import AlertEvent, AlertRule, AlertRuleOverride, Domain, SyncState, utcnow
 from . import channels
 from .rules import evaluate_rule
 from .specs import SPECS
@@ -72,14 +72,20 @@ async def _notify(event: AlertEvent, domain: Domain, settings, *, resolved: bool
     results = await channels.deliver(settings, subject, body, payload)
     if resolved:
         return results
+    event.delivery_attempts = int(event.delivery_attempts or 0) + 1
     if not results:
         event.delivery_error = "no notification channels configured"
         event.delivered_at = None
+        event.next_retry_at = utcnow() + timedelta(minutes=15 * event.delivery_attempts)
         return results
     delivered = [result for result in results if result.ok]
     event.delivered_at = utcnow() if delivered else None
     failures = [f"{result.channel}: {result.error}" for result in results if not result.ok]
     event.delivery_error = "; ".join(failures)[:4000] or None
+    if delivered:
+        event.next_retry_at = None
+    elif event.delivery_attempts < 3:
+        event.next_retry_at = utcnow() + timedelta(minutes=15 * event.delivery_attempts)
     return results
 
 
@@ -108,7 +114,28 @@ async def evaluate(
         if rule.kind not in SPECS:
             continue
         for domain in domains:
-            findings = evaluate_rule(session, rule, domain, now)
+            override = session.exec(
+                select(AlertRuleOverride).where(
+                    AlertRuleOverride.rule_id == rule.id,
+                    AlertRuleOverride.domain_id == domain.id,
+                )
+            ).first()
+            condition = dict(rule.condition or {})
+            cooldown = rule.cooldown_minutes
+            if override is not None:
+                condition.update(override.condition or {})
+                if override.cooldown_minutes is not None:
+                    cooldown = override.cooldown_minutes
+            findings = (
+                []
+                if override is not None and not override.enabled
+                else evaluate_rule(
+                    session,
+                    type("RuleView", (), {"kind": rule.kind, "condition": condition})(),
+                    domain,
+                    now,
+                )
+            )
             open_events = session.exec(
                 select(AlertEvent).where(
                     AlertEvent.rule_id == rule.id,
@@ -142,7 +169,7 @@ async def evaluate(
                 ).first()
                 if latest is not None:
                     last = _aware(latest.triggered_at)
-                    if last and now - last < timedelta(minutes=max(0, rule.cooldown_minutes)):
+                    if last and now - last < timedelta(minutes=max(0, cooldown)):
                         continue
 
                 event = AlertEvent(

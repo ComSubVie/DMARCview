@@ -225,12 +225,14 @@ def test_domain_profile(auth_client: TestClient):
     upload_all(auth_client)
     updated = auth_client.put(
         "/api/domains/tgm.rocks/profile",
-        json={"display_name": "TGM Rocks", "notes": "owner: ops"},
+        json={"display_name": "TGM Rocks", "notes": "owner: ops", "tags": ["Production", "client-a"]},
     )
     assert updated.status_code == 200
     assert updated.json()["display_name"] == "TGM Rocks"
+    assert updated.json()["tags"] == ["client-a", "production"]
     profile = auth_client.get("/api/domains/tgm.rocks/profile").json()
     assert profile["notes"] == "owner: ops"
+    assert profile["tags"] == ["client-a", "production"]
     meta = auth_client.get("/api/meta").json()
     entry = next(item for item in meta["domains"] if item["name"] == "tgm.rocks")
     assert entry["display_name"] == "TGM Rocks"
@@ -287,7 +289,11 @@ def test_duplicate_upload(auth_client: TestClient):
 
 def test_policy_simulation_is_read_only(auth_client: TestClient):
     upload_all(auth_client)
-    before = auth_client.get("/api/domains/tgm.rocks/timeline").json()["items"]
+    before = [
+        item
+        for item in auth_client.get("/api/domains/tgm.rocks/timeline").json()["items"]
+        if item["source"] != "report_gap"
+    ]
     result = auth_client.get(
         "/api/domains/tgm.rocks/simulation",
         params={"days": 30, "p": "reject", "sp": "reject", "t": "n"},
@@ -302,7 +308,11 @@ def test_policy_simulation_is_read_only(auth_client: TestClient):
     assert data["proposed"]["p"] == "reject"
     assert data["sources"]
     # Simulation must not create timeline annotations or write a policy change.
-    after = auth_client.get("/api/domains/tgm.rocks/timeline").json()["items"]
+    after = [
+        item
+        for item in auth_client.get("/api/domains/tgm.rocks/timeline").json()["items"]
+        if item["source"] != "report_gap"
+    ]
     assert before == after
 
 
@@ -412,3 +422,57 @@ def test_timeline_includes_health_snapshot_changes(auth_client: TestClient, sess
     assert changed["editable"] is False
     assert "p=none" in changed["body"]
     assert "p=reject" in changed["body"]
+
+
+def test_source_expectations_crud(auth_client: TestClient):
+    upload_all(auth_client)
+    created = auth_client.post(
+        "/api/domains/tgm.rocks/expectations",
+        json={"match_type": "cidr", "value": "192.0.2.0/24", "label": "Relay"},
+    )
+    assert created.status_code == 201, created.text
+    item = created.json()
+    assert item["value"] == "192.0.2.0/24"
+    assert item["label"] == "Relay"
+    listing = auth_client.get("/api/domains/tgm.rocks/expectations").json()
+    assert any(entry["id"] == item["id"] for entry in listing["items"])
+    invalid = auth_client.post(
+        "/api/domains/tgm.rocks/expectations",
+        json={"match_type": "cidr", "value": "not-a-network"},
+    )
+    assert invalid.status_code == 422
+    removed = auth_client.delete(f"/api/expectations/{item['id']}")
+    assert removed.status_code == 200
+    after = auth_client.get("/api/domains/tgm.rocks/expectations").json()
+    assert all(entry["id"] != item["id"] for entry in after["items"])
+
+
+def test_reporter_scorecard_fields(auth_client: TestClient):
+    upload_all(auth_client)
+    dashboard = auth_client.get(
+        "/api/dashboard", params={"domain": "tgm.rocks", "days": 30}
+    ).json()
+    reporters = dashboard["coverage_detail"]["reporters"]
+    assert reporters
+    for reporter in reporters:
+        assert "quality" in reporter
+        assert "coverage_pct" in reporter
+        assert reporter["quality"] in {"good", "sparse", "late", "silent"}
+
+
+def test_alert_domain_override_api(auth_client: TestClient):
+    upload_all(auth_client)
+    listing = auth_client.get("/api/alerts/overrides/tgm.rocks")
+    assert listing.status_code == 200
+    rules = listing.json()["rules"]
+    assert rules
+    disabled = auth_client.put(
+        "/api/alerts/overrides/tgm.rocks/new_source", json={"enabled": False}
+    )
+    assert disabled.status_code == 200
+    rule = next(item for item in disabled.json()["rules"] if item["kind"] == "new_source")
+    assert rule["override"]["enabled"] is False
+    reset = auth_client.delete("/api/alerts/overrides/tgm.rocks/new_source")
+    assert reset.status_code == 200
+    rule = next(item for item in reset.json()["rules"] if item["kind"] == "new_source")
+    assert rule["override"] is None

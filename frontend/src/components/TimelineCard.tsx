@@ -165,9 +165,11 @@ export function TimelineCard({ domain }: { domain: string }) {
             <p className="card-sub">Notes and operational events for the selected domain</p>
           </div>
         </div>
-        <EmptyState icon={<CalendarClock size={20} />} title="Select a domain">
-          The timeline is private and scoped to one domain.
-        </EmptyState>
+        <div className="card-body">
+          <EmptyState icon={<CalendarClock size={20} />} title="Select a domain">
+            The timeline is private and scoped to one domain.
+          </EmptyState>
+        </div>
       </section>
     );
   }
@@ -189,7 +191,8 @@ export function TimelineCard({ domain }: { domain: string }) {
           </button>
         </div>
       </div>
-      {loading && items.length === 0 ? <p className="tiny muted">Loading timeline…</p> : null}
+      <div className="card-body">
+        {loading && items.length === 0 ? <p className="tiny muted">Loading timeline…</p> : null}
       {error ? <p className="form-error">{error}</p> : null}
       {!loading && !error && items.length === 0 ? (
         <EmptyState icon={<CalendarClock size={20} />} title="No events yet">
@@ -232,6 +235,7 @@ export function TimelineCard({ domain }: { domain: string }) {
           ) : null}
         </>
       )}
+      </div>
       {drawer ? (
         <NoteDrawer
           domain={domain}

@@ -1,7 +1,16 @@
+export interface SourceExpectation {
+  id: number;
+  match_type: "ip" | "cidr" | "asn" | "domain";
+  value: string;
+  label: string | null;
+  created_at: string | null;
+}
+
 export interface DomainProfile {
   name: string;
   display_name: string | null;
   notes: string | null;
+  tags: string[];
 }
 
 export interface DomainRef {
@@ -245,6 +254,7 @@ export interface FleetItem {
   health: string | null;
   health_score: number | null;
   health_checked_at: string | null;
+  tags: string[];
   sparkline: FleetPoint[];
 }
 
@@ -324,6 +334,10 @@ export interface ReporterCoverage {
   messages: number;
   last_report: string | null;
   days_since: number | null;
+  days_present: number;
+  coverage_pct: number;
+  avg_latency_hours: number | null;
+  quality: "good" | "sparse" | "late" | "silent";
   status: "active" | "silent";
 }
 
@@ -707,6 +721,21 @@ export interface AlertKindSpec {
   description: string;
   severity: AlertSeverity;
   fields: AlertFieldSpec[];
+}
+
+export interface AlertOverrideRule {
+  rule_id: number;
+  kind: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  condition: Record<string, number>;
+  cooldown_minutes: number;
+  override: {
+    enabled: boolean;
+    condition: Record<string, number>;
+    cooldown_minutes: number;
+  } | null;
 }
 
 export interface AlertRuleItem {

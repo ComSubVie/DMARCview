@@ -26,6 +26,7 @@ Stalwart's behaviour before trusting them.
 ../.venv/bin/python -m app.cli stats    # row counts
 ../.venv/bin/python -m app.cli import ../samples/*.eml
 ../.venv/bin/python -m app.cli backup --keep 14
+../.venv/bin/python -m app.cli restore ../data/backups/dmarc-YYYYMMDD-HHMMSS.db --yes
 ../.venv/bin/python -m app.cli geo-enrich
 ../.venv/bin/python -m app.cli prune --dry-run
 ../.venv/bin/python -m app.cli mailbox-debug --days 90 --json
@@ -61,7 +62,7 @@ docker build -t dmarcview .
 | `backend/app/share.py` | Share-token signing, public payload shaping, storage helpers |
 | `backend/app/retention.py` | Raw archiving and opt-in report pruning |
 | `backend/app/models.py` | SQLModel schema — the source of truth for Alembic |
-| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute, `0006` DMARCbis fields, `0007` annotations) |
+| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute, `0006` DMARCbis fields, `0007` annotations, `0008` source expectations, `0009` alert overrides/retry, `0010` domain tags) |
 | `frontend/src/` | `pages/`, `components/`, `state.tsx`, `api.ts`, `types.ts`, `styles.css` |
 | `samples/` | Hand-written CRLF `.eml` fixtures used by the test suite |
 | `docs/` | Roadmap and screenshots |
@@ -107,6 +108,18 @@ from impact, and the comparison baseline is the latest report (not live DNS).
 **Timeline annotations are private.** `domain_annotations` is admin-only and must never appear
 in share payloads. Derived timeline events are computed from snapshots/alerts/identities; they
 are not a second source of truth.
+
+**Restore takes a safety snapshot and requires --yes.** `restore_database` verifies the
+snapshot and replaces the live SQLite file; stop the web process first. Archives are separate.
+
+**The weekly digest is opt-in and uses its own recipients.** `DIGEST_ENABLED` gates the job;
+`DIGEST_TO` falls back to `ALERT_TO`. It must not send through the alert dedupe path.
+
+**Known-sender expectations suppress noise, not evidence.** `source_expectations` only skips
+new-source *findings*; it never hides reports, sources or history.
+
+**Per-domain alert overrides are layered over global rules.** Preserve dedupe/resolution
+semantics; disabling an override must resolve open events, not leave them stale.
 
 **External rua=/ruf= destinations require _report._dmarc authorization.** The DMARC check
 queries `_report._dmarc.<destination>` for destinations outside the policy domain and reports
@@ -194,8 +207,8 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
 the user asks for them. Export, fleet comparison, retention, DMARCbis and decision support are
-delivered; Phase 8 (restore, digest, trust, groups) is the next product slice. RUF and platform
-work stay optional/trigger-based.
+delivered; Phase 9 (TLS policy attribution, report errors, DNS history) is the next product
+slice. Saved fleet views, MFA/audit, RUF and platform work stay parked/trigger-based.
 
 ## Security expectations
 

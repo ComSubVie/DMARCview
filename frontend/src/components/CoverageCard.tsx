@@ -11,12 +11,14 @@ export function CoverageCard({
   allDomains: boolean;
 }) {
   const policy = coverage.subdomain_policy;
+  const qualityTone = (quality: string): "good" | "warn" | "bad" | "neutral" =>
+    quality === "good" ? "good" : quality === "silent" ? "bad" : quality === "late" ? "warn" : "warn";
   return (
     <section className="card coverage-card">
       <div className="card-head">
         <div>
           <h2 className="card-title">Sending coverage</h2>
-          <p className="card-sub">Reporter gaps, other header-from domains and the effective policy</p>
+          <p className="card-sub">Reporter quality, other header-from domains and the effective policy</p>
         </div>
         <Badge tone="info">{coverage.reporters.length} reporter{coverage.reporters.length === 1 ? "" : "s"}</Badge>
       </div>
@@ -31,7 +33,9 @@ export function CoverageCard({
                 <div className="coverage-row" key={`${reporter.org}-${reporter.status}`}>
                   <span className={`coverage-dot ${reporter.status}`} />
                   <span className="coverage-name">{reporter.org}</span>
-                  <span className="tiny muted">{reporter.reports} reports</span>
+                  <span className="tiny muted">
+                    {reporter.reports} reports · {reporter.coverage_pct}% days
+                  </span>
                   <span className={`tiny ${reporter.status === "silent" ? "coverage-silent" : "muted"}`}>
                     {reporter.status === "silent"
                       ? "silent"
@@ -39,6 +43,7 @@ export function CoverageCard({
                         ? relativeTime(reporter.last_report)
                         : "—"}
                   </span>
+                  <Badge tone={qualityTone(reporter.quality)}>{reporter.quality}</Badge>
                 </div>
               ))
             )}

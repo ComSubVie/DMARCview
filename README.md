@@ -43,20 +43,24 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
   destinations verified, and a readiness panel for the current record. Because outbound port
   25 is allowed, it also probes MX, submission and IMAP endpoints: STARTTLS, TLS version,
   certificate chain, hostname, expiry and DANE/TLSA.
+- **Keeps the routine quiet.** Mark known ESP networks, ASNs or sending domains so first-seen
+  alerts stay meaningful, then silence or retune a rule for one domain without changing the
+  global policy. A weekly SMTP digest covers domains you do not open every day.
 - **Tells you when it changes.** Nine alert rules cover compliance drops, new senders, DKIM
   breaks, TLS failures, silent report gaps, volume spikes, policy drift and certificate expiry,
   delivered over SMTP, Telegram, Signal (signal-cli) or a signed webhook.
 - **Runs itself.** An in-process scheduler re-checks every few hours, evaluates alerts,
   reverse-resolves sending IPs, and reports every run in the UI. No cron, Redis or Celery.
-- **Multi-domain.** A fleet view plus a per-domain drill-down with a domain picker.
+- **Multi-domain.** A fleet view plus a per-domain drill-down with a domain picker; free-form
+  domain tags/group filters for larger fleets.
 - **Share safely.** Signed, expiring, revocable read-only links for one domain or the whole
   fleet — no account required. Raw reports, search, alert settings and the admin area stay
   private.
 - **Export or compare.** Download the current view as CSV/JSON, a capped raw-report ZIP, or
   compare every domain side by side (volume, alignment, TLS, policy, health, 14-day trend).
 - **Report browser.** Search, filter, inspect every record, download the original XML/JSON.
-- **Boring to operate.** One container, one SQLite file, no external services, no
-  telemetry, no third-party IP lookups (GeoIP is local).
+- **Boring to operate.** One container, one SQLite file, consistent backups with a tested
+  restore path, no external services, no telemetry, no third-party IP lookups (GeoIP is local).
 
 | Domain health | Alerts |
 | --- | --- |
@@ -246,6 +250,9 @@ All settings are environment variables (`.env` is loaded automatically).
 | `SMTP_USERNAME` / `SMTP_PASSWORD` | — | Optional SMTP authentication. |
 | `SMTP_FROM` | — | Sender address for alerts. |
 | `ALERT_TO` | — | Comma-separated recipients. |
+| `DIGEST_ENABLED` | `false` | Send a weekly fleet email digest over SMTP. |
+| `DIGEST_TO` | `ALERT_TO` | Digest recipients when they differ from alert recipients. |
+| `DIGEST_DAYS` | `7` | Digest window and minimum interval between sends. |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | — | Telegram delivery. |
 | `SIGNAL_API_URL` / `SIGNAL_NUMBER` / `SIGNAL_RECIPIENTS` | — | Signal via a signal-cli REST sidecar. |
 | `WEBHOOK_URL` / `WEBHOOK_SECRET` | — | JSON webhook with an HMAC signature. |
@@ -313,6 +320,7 @@ python -m app.cli mailbox-debug --days 90 --json  # read-only message/payload re
 python -m app.cli import samples/*.eml  # offline import of .eml / .zip
 python -m app.cli migrate             # apply database migrations
 python -m app.cli backup --keep 14    # consistent SQLite snapshot
+python -m app.cli restore path.db --yes  # restore after stopping the app
 python -m app.cli geo-enrich          # backfill countries for existing rows
 python -m app.cli prune --dry-run     # preview retention (archive + delete)
 python -m app.cli prune --days 365 --yes  # archive and delete reports older than a year
@@ -418,9 +426,10 @@ v1.2 added alerting over SMTP, Telegram, Signal and webhooks; v1.3 added sender 
 and period-over-period changes; v1.4 completed analytics; v1.5 added sharing; v1.6 added
 export/fleet; v1.7 added retention; v1.8 delivered RFC 9989 tree-walk/PSD policy discovery,
 a DMARCbis readiness panel, external report authorization and effective-policy coverage; v1.9
-adds the read-only policy simulator and the private domain timeline. Next: operational
-recovery, digests and trust work in Phase 8. RUF and platform work remain optional. Sequencing
-and effort estimates live in [docs/ROADMAP.md](docs/ROADMAP.md).
+adds the read-only policy simulator and the private domain timeline; v1.10 adds restore,
+weekly digest, reporter quality, known senders, per-domain alert overrides and domain groups.
+Next: saved fleet views and signal-quality work. RUF and platform work remain optional.
+Sequencing and effort estimates live in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
 
@@ -428,7 +437,7 @@ and effort estimates live in [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (101 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (110 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -555,6 +564,16 @@ has run. Existing authored records keep their previous pass/warn/fail behaviour.
 (safe while the app is serving), verifies it with `PRAGMA integrity_check`, and keeps the
 last `BACKUP_KEEP` files in `data/backups/`. The Ingestion page shows database size, raw
 archive size and growth so the decision can be made with numbers.
+
+To restore, stop the web process first, then run:
+
+```bash
+python -m app.cli restore data/backups/dmarc-YYYYMMDD-HHMMSS.db --yes
+```
+
+Restore verifies the snapshot before replacing the live database and takes a safety snapshot
+of the current database first. The `--yes` flag is mandatory. Report archives under
+`data/archive/` are not part of the database snapshot and must be restored separately.
 
 Retention is **off by default** (`RETENTION_DAYS=0`). When set, a daily scheduler job archives
 each old report's original XML/JSON to `data/archive/YYYY/MM/` and then deletes the report and

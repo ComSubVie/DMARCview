@@ -15,7 +15,9 @@ from app.analytics import volume_anomaly
 from app.models import (
     AlertEvent,
     AlertRule,
+    AlertRuleOverride,
     Domain,
+    SourceExpectation,
     DomainHealthSnapshot,
     Report,
     SourceRecord,
@@ -166,6 +168,37 @@ def test_new_source_ignores_old_ips(session: Session):
     assert result["created"] == 1
     event = session.exec(select(AlertEvent)).one()
     assert event.dedupe_key == "source:192.0.2.99"
+
+
+def test_known_sender_suppresses_new_source(session: Session):
+    domain = make_domain(session)
+    only_rule(session, "new_source")
+    now = datetime.now(timezone.utc)
+    current = make_report(
+        session, domain, begin=now - timedelta(hours=20), end=now, suffix="known-sender"
+    )
+    add_record(session, current, domain, ip="192.0.2.99", count=7, dkim_pass=True, spf_pass=True)
+    session.add(
+        SourceExpectation(domain_id=domain.id, match_type="cidr", value="192.0.2.0/24", label="relay")
+    )
+    session.commit()
+    result = evaluate_now(session)
+    assert result["created"] == 0
+
+
+def test_domain_override_can_disable_rule(session: Session):
+    domain = make_domain(session)
+    only_rule(session, "new_source")
+    now = datetime.now(timezone.utc)
+    current = make_report(
+        session, domain, begin=now - timedelta(hours=20), end=now, suffix="override"
+    )
+    add_record(session, current, domain, ip="198.51.100.7", count=7, dkim_pass=True, spf_pass=True)
+    rule = session.exec(select(AlertRule).where(AlertRule.kind == "new_source")).one()
+    session.add(AlertRuleOverride(rule_id=rule.id, domain_id=domain.id, enabled=False))
+    session.commit()
+    result = evaluate_now(session)
+    assert result["created"] == 0
 
 
 def test_cert_expiry(session: Session):

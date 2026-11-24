@@ -97,8 +97,20 @@ def any_configured(settings: Settings) -> bool:
     return any(item["configured"] for item in statuses(settings))
 
 
-def _smtp_send(settings: Settings, subject: str, body: str) -> ChannelResult:
-    to = recipients(settings)
+def send_smtp(
+    settings: Settings,
+    subject: str,
+    body: str,
+    *,
+    html: Optional[str] = None,
+    to: Optional[list[str]] = None,
+) -> ChannelResult:
+    """Send mail through the configured SMTP account.
+
+    Kept separate from ``deliver`` so the weekly digest can use its own
+    recipient list without changing alert routing.
+    """
+    to = to or recipients(settings)
     sender = settings.smtp_from or settings.smtp_username
     if not to or not sender:
         return ChannelResult("smtp", False, "SMTP is not fully configured")
@@ -107,6 +119,8 @@ def _smtp_send(settings: Settings, subject: str, body: str) -> ChannelResult:
     message["To"] = ", ".join(to)
     message["Subject"] = subject
     message.set_content(body)
+    if html:
+        message.add_alternative(html, subtype="html")
     try:
         if settings.smtp_security == "ssl":
             client = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=20)
@@ -121,6 +135,10 @@ def _smtp_send(settings: Settings, subject: str, body: str) -> ChannelResult:
         return ChannelResult("smtp", True)
     except (smtplib.SMTPException, OSError, ssl.SSLError) as exc:
         return ChannelResult("smtp", False, f"{type(exc).__name__}: {exc}"[:400])
+
+
+def _smtp_send(settings: Settings, subject: str, body: str) -> ChannelResult:
+    return send_smtp(settings, subject, body)
 
 
 async def _telegram_send(settings: Settings, subject: str, body: str) -> ChannelResult:

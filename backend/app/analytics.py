@@ -21,6 +21,7 @@ from .geoip import COUNTRY_NAMES, country_flag
 from .models import (
     Domain,
     DomainHealthSnapshot,
+    DomainTag,
     DomainSettings,
     IpMeta,
     Report,
@@ -632,6 +633,7 @@ def _coverage_detail(session: Session, domain: Optional[Domain], rng: DateRange)
             func.count(Report.id),
             func.coalesce(func.sum(Report.message_count), 0),
             func.max(Report.date_end),
+            func.count(distinct(Report.report_date)),
         )
         .where(*conditions)
         .group_by(Report.org_name)
@@ -657,27 +659,58 @@ def _coverage_detail(session: Session, domain: Optional[Domain], rng: DateRange)
     ).all()
 
     now = utcnow()
+    latency: dict[str, list[float]] = {}
+    for org, date_end, ingested_at in session.exec(
+        select(Report.org_name, Report.date_end, Report.ingested_at).where(*conditions)
+    ).all():
+        if date_end is None or ingested_at is None:
+            continue
+        end = date_end if date_end.tzinfo else date_end.replace(tzinfo=timezone.utc)
+        seen = ingested_at if ingested_at.tzinfo else ingested_at.replace(tzinfo=timezone.utc)
+        latency.setdefault(org, []).append(max(0.0, (seen - end).total_seconds() / 3600))
 
-    def reporter(org: str, reports: int, messages: int, last, status: str) -> dict[str, Any]:
+    def reporter(
+        org: str,
+        reports: int,
+        messages: int,
+        last,
+        days_present: int,
+        status: str,
+    ) -> dict[str, Any]:
         last_dt = last
         if last_dt is not None and last_dt.tzinfo is None:
             last_dt = last_dt.replace(tzinfo=timezone.utc)
+        values = latency.get(org, [])
+        average = round(sum(values) / len(values), 1) if values else None
+        coverage = round(days_present / max(1, rng.days) * 100, 1)
+        if status == "silent":
+            quality = "silent"
+        elif coverage < 33:
+            quality = "sparse"
+        elif average is not None and average > 48:
+            quality = "late"
+        else:
+            quality = "good"
         return {
             "org": org,
             "reports": int(reports),
             "messages": int(messages or 0),
             "last_report": _iso(last_dt),
             "days_since": int((now - last_dt).total_seconds() // 86400) if last_dt else None,
+            "days_present": int(days_present),
+            "coverage_pct": coverage,
+            "avg_latency_hours": average,
+            "quality": quality,
             "status": status,
         }
 
     current_orgs = {row[0] for row in rows}
     reporters = [
-        reporter(org, reports, messages, last, "active")
-        for org, reports, messages, last in rows
+        reporter(org, reports, messages, last, days_present, "active")
+        for org, reports, messages, last, days_present in rows
     ]
     reporters.extend(
-        reporter(org, reports, messages, last, "silent")
+        reporter(org, reports, messages, last, 0, "silent")
         for org, reports, messages, last in previous_rows
         if org not in current_orgs
     )
@@ -867,6 +900,14 @@ def _fleet(session: Session, rng: DateRange) -> list[dict[str, Any]]:
                 "health": snapshot.overall if snapshot else None,
                 "health_score": snapshot.score if snapshot else None,
                 "health_checked_at": _iso(snapshot.checked_at) if snapshot else None,
+                "tags": [
+                    tag.tag
+                    for tag in session.exec(
+                        select(DomainTag)
+                        .where(DomainTag.domain_id == domain.id)
+                        .order_by(DomainTag.tag)
+                    ).all()
+                ],
                 "sparkline": sparkline,
             }
         )

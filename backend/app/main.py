@@ -24,6 +24,7 @@ from .routers import simulation as simulation_router
 from .routers import timeline as timeline_router
 from .routers import alerts as alerts_router
 from .routers import health as health_router
+from .routers import expectations as expectations_router
 from .routers import export as export_router
 from .routers import ingest as ingest_router
 from .routers import share as share_router
@@ -117,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(api_router.router)
     app.include_router(simulation_router.router)
     app.include_router(timeline_router.router)
+    app.include_router(expectations_router.router)
     app.include_router(ingest_router.router)
     app.include_router(health_router.router)
     app.include_router(export_router.router)

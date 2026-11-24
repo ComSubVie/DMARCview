@@ -1,3 +1,3 @@
 """Version string kept in one place."""
 
-VERSION = "1.9.0"
+VERSION = "1.10.0"

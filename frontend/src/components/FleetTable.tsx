@@ -59,9 +59,18 @@ export function FleetTable({ items }: { items: FleetItem[] }) {
     key: "messages",
     dir: "desc",
   });
+  const [tag, setTag] = useState("");
+  const tags = useMemo(
+    () => Array.from(new Set(items.flatMap((item) => item.tags ?? []))).sort(),
+    [items],
+  );
+  const filtered = useMemo(
+    () => (tag ? items.filter((item) => (item.tags ?? []).includes(tag)) : items),
+    [items, tag],
+  );
 
   const sorted = useMemo(() => {
-    const copy = [...items];
+    const copy = [...filtered];
     copy.sort((left, right) => {
       const a = valueFor(left, sort.key);
       const b = valueFor(right, sort.key);
@@ -72,7 +81,7 @@ export function FleetTable({ items }: { items: FleetItem[] }) {
       return sort.dir === "asc" ? result : -result;
     });
     return copy;
-  }, [items, sort]);
+  }, [filtered, sort]);
 
   function toggle(key: SortKey) {
     setSort((current) =>
@@ -109,7 +118,19 @@ export function FleetTable({ items }: { items: FleetItem[] }) {
           <h2 className="card-title">Fleet comparison</h2>
           <p className="card-sub">Click a domain to drill down · click a heading to sort</p>
         </div>
-        <Badge tone="info">{items.length} domains</Badge>
+        <div className="timeline-head-actions">
+          {tags.length > 0 ? (
+            <select className="fleet-tag-filter" value={tag} onChange={(event) => setTag(event.target.value)}>
+              <option value="">All groups</option>
+              {tags.map((item) => (
+                <option value={item} key={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <Badge tone="info">{filtered.length} domains</Badge>
+        </div>
       </div>
       <div style={{ padding: "2px 8px 12px", overflowX: "auto" }}>
         <table className="data fleet-table">
@@ -139,6 +160,9 @@ export function FleetTable({ items }: { items: FleetItem[] }) {
                   <div className="primary-cell">{item.display_name || item.domain}</div>
                   {item.display_name && item.display_name !== item.domain ? (
                     <div className="tiny muted">{item.domain}</div>
+                  ) : null}
+                  {(item.tags ?? []).length > 0 ? (
+                    <div className="tiny muted">{item.tags.join(" · ")}</div>
                   ) : null}
                 </td>
                 <td className="center num">{formatNumber(item.messages)}</td>

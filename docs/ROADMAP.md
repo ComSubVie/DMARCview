@@ -1,13 +1,15 @@
 # Roadmap
 
-_Rev 14 · 24 November 2026 · decision support delivered (v1.9)_
+_Rev 15 · 24 November 2026 · operational confidence (v1.10)_
 
 v1 answered **"what happened?"**; v1.1 added **"is my configuration correct?"**; v1.2 added
 **"tell me when it changes"**; v1.4 completed **why it changed**; v1.5 added sharing; v1.6
 added export/fleet; v1.7 added retention; v1.8 delivers DMARCbis: RFC 9989 tree-walk/PSD
 discovery, a readiness panel, external reporting authorization and effective-policy coverage.
-v1.9 adds decision support: a read-only policy simulator and a private domain timeline. Next:
-operational confidence, then signal quality. RUF and platform work remain optional.
+v1.9 added decision support: a read-only policy simulator and a private domain timeline. v1.10
+adds operational confidence: restore, weekly digest, reporter quality, known senders,
+per-domain alert overrides/retry and domain groups. Saved fleet views and MFA remain parked;
+signal quality (Phase 9) is next. RUF and platform work remain optional.
 
 ## Delivered so far
 
@@ -33,14 +35,22 @@ operational confidence, then signal quality. RUF and platform work remain option
 | **Retention** | Opt-in `RETENTION_DAYS`; raw XML/JSON archived to `data/archive/YYYY/MM/` before deleting reports and child rows; dry-run CLI and daily scheduler job. |
 | **DMARCbis** | RFC 9989 parent/PSD tree walk when a domain has no record of its own; `np=`, `t=`, `psd=` and external `rua/ruf` authorization; report fields `np`, `testing`, `discovery_method`; readiness panel; effective-policy subdomain coverage; deprecation notes for `pct/rf/ri`. Existing author-domain logic is unchanged. |
 | **Decision support** | Read-only policy simulator over stored reports (p/sp/np/t, per-source impact, confidence/verdict); private domain timeline combining annotations with alerts, DNS changes, new identities and report gaps. |
-| **Tests** | 101 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage, share links, domain profile, check mute, GeoIP backfill, export, fleet, retention, DMARCbis tree walk/PSD, external reporting authorization, policy simulation, timeline annotations. |
+| **Restore** | `app.cli restore` verifies the snapshot, takes a safety backup and requires `--yes`. |
+| **Weekly digest** | Optional SMTP summary per fleet/domain with alignment, failing sources, policy and TLS; HTML + text, independent recipients. |
+| **Reporter quality** | Per-reporter coverage, lateness and quality badges (good/sparse/late/silent). |
+| **Known senders** | Per-domain IP/CIDR/ASN/domain expectations suppress `new_source` alerts. |
+| **Alert overrides** | Per-domain disable/threshold/cooldown overrides plus retry/backoff for failed deliveries. |
+| **Domain groups** | Free-form domain tags and a fleet group filter; saved filter presets remain parked. |
+| **Tests** | 110 backend tests: parsers, ingestion, API, auth, mocked JMAP, health checks/probes, migration path, alerts, report-gap, identities, period changes, anomaly scoring, coverage, share links, domain profile, check mute, GeoIP backfill, export, fleet, retention, DMARCbis tree walk/PSD, external reporting authorization, policy simulation, timeline annotations, restore, digest, reporter quality, known senders, alert overrides, domain tags. |
 
 Known limits: DNSSEC relies on the resolver's AD flag (no chain validation); BIMI checks
-presence only; probes need outbound port 25; alert rules are global (no per-domain overrides)
-and failed deliveries are not retried; there is no restore path or off-box backup; MFA is
-absent; TLS-RPT reports are attributed to their first policy domain; RFC 9990 `<error>`
-elements are not surfaced; RUF is not ingested. Timeline auto-events are derived from the last
-20 health snapshots and the last 180 days.
+presence only; probes need outbound port 25; per-domain overrides exist, but the UI exposes
+disable/reset only (thresholds and cooldowns use the API); failed deliveries retry with
+backoff. Restore is local; there is no
+off-box backup target. MFA/audit and saved fleet views are parked. TLS-RPT reports are
+attributed to their first policy domain; RFC 9990 `<error>` elements are not surfaced; RUF is
+not ingested. Timeline auto-events are derived from the last 20 health snapshots and the last
+180 days.
 
 ## Decisions locked in
 
@@ -60,18 +70,18 @@ elements are not surfaced; RUF is not ingested. Timeline auto-events are derived
 | Phase | Theme | Effort | Status |
 | --- | --- | --- | --- |
 | **7** | Decision support: policy simulator, domain timeline | 3–5 d | **delivered** |
-| **8** | Operational confidence: restore, digest, trust, groups | 7–13 d | **next** |
-| **9** | Signal quality: TLS policy attribution, report errors, DNS history | 2–4 d | after 8 |
+| **8** | Operational confidence: restore, digest, trust, groups | 7–13 d | **mostly delivered** (saved views + MFA parked) |
+| **9** | Signal quality: TLS policy attribution, report errors, DNS history | 2–4 d | **next** |
 | **4** | Forensic (RUF) reports | 3–4 d | optional |
 | **5** | Platform: Postgres, IMAP, tokens, metrics | 8–10 d | trigger-based |
 
-≈ **9–17 focused engineer-days** for Phases 8–9, tests included. The range reflects how much
-of the trust/UX bundle is taken in one pass. RUF adds 3–4 days and platform work 8–10, both
-optional and reorderable.
+≈ **3–6 focused engineer-days** remain for saved fleet views (1–2 d) and Phase 9 (2–4 d).
+MFA/audit is deliberately parked. RUF adds 3–4 days and platform work 8–10, both optional and
+reorderable.
 
-Phase 8 adds operational recovery and trust, which are more valuable now that policy changes
-can be simulated. Phase 9 fixes attribution and data-quality gaps that would otherwise make
-later analytics look more precise than they are.
+Phase 8 delivered the operational basics; saved views are a convenience, not a blocker. Phase
+9 fixes attribution and data-quality gaps that would otherwise make later analytics look more
+precise than they are.
 
 ---
 
@@ -194,17 +204,17 @@ existing report/source data.
   Implemented in `app/timeline.py` with migration `0007`. Annotations stay private; they are
   never included in share links.
 
-## Phase 8 — Operational confidence (7–13 days)
+## Phase 8 — Operational confidence (mostly delivered)
 
-| Item | Scope | Effort |
+| Item | Scope | Status |
 | --- | --- | --- |
-| **8.1 Restore** | `app.cli restore <snapshot>` with a pre-restore safety snapshot, integrity check, `--yes`, optional archive restore; docs and tests. Off-box sync remains separate. | 1–2 d |
-| **8.2 Weekly digest** | Scheduler job using the existing SMTP channel: per-domain or fleet summary, top failing sources, policy/TLS changes and a dashboard/share link; HTML + text; no duplicate of alert delivery. | 1–2 d |
-| **8.3 Reporter scorecard** | Extend coverage with per-reporter expected cadence, days present, lateness, duplicate/report-id conflicts and a quality badge. | 1 d |
-| **8.4 Source expectations** | Allowlist CIDR/IP/ASN/identity or domain tags; suppress `new_source` for known senders; show “known” context. Scoped per domain. | 1–2 d |
-| **8.5 Alert follow-ups** | Per-domain rule thresholds/mute, channel routing and retry with backoff; keep dedupe semantics and resolution notices. | 1–2 d |
-| **8.6 MFA + audit log** | TOTP and recovery codes, optional enforcement, session invalidation; audit login, settings, share, mute and profile changes. WebAuthn stays parked. | 1–2 d |
-| **8.7 Saved views and domain groups** | Domain groups/tags, saved filter presets for the dashboard/fleet, group-scoped share links. | 1–2 d |
+| **8.1 Restore** | `app.cli restore <snapshot>` verifies, takes a safety backup and requires `--yes`. Off-box sync remains separate. | **delivered** |
+| **8.2 Weekly digest** | Optional SMTP fleet summary with per-domain alignment, failing sources, policy and TLS; HTML + text. | **delivered** |
+| **8.3 Reporter scorecard** | Coverage, lateness and quality badges per reporter. | **delivered** |
+| **8.4 Source expectations** | Per-domain IP/CIDR/ASN/domain allowlist; suppresses `new_source` alerts. | **delivered** |
+| **8.5 Alert follow-ups** | Per-domain override API, UI mute/reset, delivery retry with backoff. | **delivered** (threshold editing is API-only) |
+| **8.6 MFA + audit log** | TOTP/recovery codes and audit trail. | **parked by request** |
+| **8.7 Groups and saved views** | Domain tags + fleet group filter. Saved filter presets. | **groups delivered; saved views remain** |
 
 ## Phase 9 — Signal quality (2–4 days)
 
@@ -243,8 +253,9 @@ Shipped: report-gap banner, copy-to-clipboard, URL-backed domain/period/report-s
 print stylesheet, editable domain profiles, and per-domain scheduled-check mute.
 
 Shipped in v1.9: read-only policy simulator and private domain timeline (with annotations).
-Scheduled as part of the phases above: weekly digest, reporter scorecard, source allowlisting,
-DNS change history, saved fleet views and domain groups.
+Shipped in v1.10: weekly digest, reporter scorecard, source allowlisting, per-domain alert
+overrides, delivery retry, domain tags and the fleet group filter. Remaining: saved fleet views
+and DNS change history.
 
 ---
 
@@ -264,3 +275,4 @@ DNS change history, saved fleet views and domain groups.
 1. **Off-box backup:** when a target appears, sync the SQLite snapshot and `data/archive/`.
 2. **Share-link rate limit:** currently per-process memory; revisit if multiple workers/replicas are added.
 3. **RUF/PII policy:** decide whether forensic reports are worth the extra handling before Phase 4.
+4. **Saved fleet views and MFA/audit:** intentionally parked; no release blocker.

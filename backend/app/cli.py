@@ -20,7 +20,7 @@ from pathlib import Path
 
 from sqlmodel import Session, func, select
 
-from .backup import BackupError, backup_database
+from .backup import BackupError, backup_database, restore_database
 from .config import get_settings
 from .db import get_engine, init_db
 from .geoip import get_geo_resolver
@@ -232,6 +232,21 @@ def cmd_mailbox_debug(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_restore(args: argparse.Namespace) -> int:
+    if not args.yes:
+        print("refusing to restore without --yes (stop the app first)", file=sys.stderr)
+        return 1
+    try:
+        safety = restore_database(Path(args.snapshot))
+    except BackupError as exc:
+        print(f"restore failed: {exc}", file=sys.stderr)
+        return 1
+    if safety and safety != Path():
+        print(f"safety backup: {safety}")
+    print(f"restored {args.snapshot}")
+    return 0
+
+
 def cmd_import(args: argparse.Namespace) -> int:
     init_db()
     paths = _collect(args.paths)
@@ -416,6 +431,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("migrate", help="apply database migrations")
     p.set_defaults(func=cmd_migrate)
+
+    p = sub.add_parser("restore", help="restore a SQLite snapshot (requires --yes)")
+    p.add_argument("snapshot", help="path to a dmarc-*.db snapshot")
+    p.add_argument("--yes", action="store_true", help="confirm the restore")
+    p.set_defaults(func=cmd_restore)
 
     p = sub.add_parser("backup", help="write a consistent SQLite backup")
     p.add_argument("--destination", help="directory for the snapshot")

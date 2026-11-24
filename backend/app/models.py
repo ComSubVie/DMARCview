@@ -42,6 +42,20 @@ class Domain(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class DomainTag(SQLModel, table=True):
+    """A free-form group/tag attached to a domain."""
+
+    __tablename__ = "domain_tags"
+    __table_args__ = (
+        UniqueConstraint("domain_id", "tag", name="uq_domain_tag"),
+        Index("ix_domain_tags_tag", "tag"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    domain_id: int = Field(foreign_key="domains.id", index=True)
+    tag: str = Field(max_length=64)
+
+
 class DomainAnnotation(SQLModel, table=True):
     """A private operator note on a domain timeline."""
 
@@ -56,6 +70,23 @@ class DomainAnnotation(SQLModel, table=True):
     body: Optional[str] = Field(default=None, sa_column=Column(Text))
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+
+class SourceExpectation(SQLModel, table=True):
+    """A known sender rule used to quiet new-source alerts."""
+
+    __tablename__ = "source_expectations"
+    __table_args__ = (
+        UniqueConstraint("domain_id", "match_type", "value", name="uq_expectation_domain_match"),
+        Index("ix_expectations_domain", "domain_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    domain_id: int = Field(foreign_key="domains.id", index=True)
+    match_type: str = Field(max_length=16)  # ip | cidr | asn | domain
+    value: str = Field(max_length=255)
+    label: Optional[str] = Field(default=None, max_length=255)
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class Report(SQLModel, table=True):
@@ -397,6 +428,24 @@ class AlertRule(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=utcnow)
 
 
+class AlertRuleOverride(SQLModel, table=True):
+    """Per-domain override for a global alert rule."""
+
+    __tablename__ = "alert_rule_overrides"
+    __table_args__ = (
+        UniqueConstraint("rule_id", "domain_id", name="uq_alert_override_rule_domain"),
+        Index("ix_alert_overrides_domain", "domain_id"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    rule_id: int = Field(foreign_key="alert_rules.id", index=True)
+    domain_id: int = Field(foreign_key="domains.id", index=True)
+    enabled: bool = Field(default=True)
+    condition: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    cooldown_minutes: Optional[int] = Field(default=None)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class AlertEvent(SQLModel, table=True):
     """A fired (and later resolved) incident."""
 
@@ -415,6 +464,8 @@ class AlertEvent(SQLModel, table=True):
     resolved_at: Optional[datetime] = Field(default=None)
     delivered_at: Optional[datetime] = Field(default=None)
     delivery_error: Optional[str] = Field(default=None, sa_column=Column(Text))
+    delivery_attempts: int = Field(default=0)
+    next_retry_at: Optional[datetime] = Field(default=None)
 
 
 def dump_json(value: Any) -> bytes:

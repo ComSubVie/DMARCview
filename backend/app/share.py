@@ -147,6 +147,8 @@ def public_payload(session: Session, row: ShareLink, domain: Optional[Domain]) -
             "unverified": {"messages": 0, "sources": 0},
         }
     data["identities"] = {"total": 0, "items": []}
+    for item in data.get("fleet") or []:
+        item["tags"] = []
     if data.get("coverage_detail"):
         data["coverage_detail"]["subdomains"] = []
     if data.get("changes"):

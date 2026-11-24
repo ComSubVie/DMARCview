@@ -137,9 +137,23 @@ export const api = {
     ),
   domainProfile: (domain: string) =>
     request<import("./types").DomainProfile>(`/domains/${encodeURIComponent(domain)}/profile`),
+  expectations: (domain: string) =>
+    request<{ items: import("./types").SourceExpectation[] }>(
+      `/domains/${encodeURIComponent(domain)}/expectations`,
+    ),
+  createExpectation: (
+    domain: string,
+    payload: { match_type: string; value: string; label?: string | null },
+  ) =>
+    request<import("./types").SourceExpectation>(
+      `/domains/${encodeURIComponent(domain)}/expectations`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ),
+  deleteExpectation: (id: number) =>
+    request<{ ok: boolean }>(`/expectations/${id}`, { method: "DELETE" }),
   updateDomainProfile: (
     domain: string,
-    payload: { display_name?: string | null; notes?: string | null },
+    payload: { display_name?: string | null; notes?: string | null; tags?: string[] },
   ) =>
     request<import("./types").DomainProfile>(`/domains/${encodeURIComponent(domain)}/profile`, {
       method: "PUT",
@@ -174,6 +188,24 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(payload),
     }),
+  alertOverrides: (domain: string) =>
+    request<{ domain: string; rules: import("./types").AlertOverrideRule[] }>(
+      `/alerts/overrides/${encodeURIComponent(domain)}`,
+    ),
+  setAlertOverride: (
+    domain: string,
+    kind: string,
+    payload: { enabled?: boolean; condition?: Record<string, number>; cooldown_minutes?: number },
+  ) =>
+    request<{ domain: string; rules: import("./types").AlertOverrideRule[] }>(
+      `/alerts/overrides/${encodeURIComponent(domain)}/${encodeURIComponent(kind)}`,
+      { method: "PUT", body: JSON.stringify(payload) },
+    ),
+  deleteAlertOverride: (domain: string, kind: string) =>
+    request<{ domain: string; rules: import("./types").AlertOverrideRule[] }>(
+      `/alerts/overrides/${encodeURIComponent(domain)}/${encodeURIComponent(kind)}`,
+      { method: "DELETE" },
+    ),
   runAlerts: () =>
     request<import("./types").AlertRunResult>("/alerts/run", { method: "POST" }),
   testAlertChannel: (channel?: string) =>

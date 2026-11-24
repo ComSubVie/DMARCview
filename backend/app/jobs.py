@@ -11,7 +11,7 @@ import logging
 import random
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Optional
 
 from sqlmodel import Session, select
@@ -22,7 +22,17 @@ from .alerts.service import evaluate as evaluate_alerts
 from .geoip import get_asn_resolver
 from .health.dns import get_dns_client
 from .health.service import run_and_store_health, run_and_store_probes
-from .models import Domain, DomainSettings, IpMeta, JobRun, SourceRecord, utcnow
+from .models import (
+    AlertEvent,
+    Domain,
+    DomainSettings,
+    IpMeta,
+    JobRun,
+    SourceRecord,
+    SyncState,
+    utcnow,
+)
+from .digest import send_digest
 from .retention import prune
 
 log = logging.getLogger(__name__)
@@ -110,6 +120,75 @@ async def job_retention() -> dict:
         return {"skipped": "disabled"}
     with Session(get_engine()) as session:
         return prune(session, settings.retention_days)
+
+
+DIGEST_STATE_KEY = "digest.last_sent_at"
+
+
+async def job_retry_alerts() -> dict:
+    settings = get_settings()
+    if not settings.alerts_enabled:
+        return {"skipped": "disabled"}
+    from .alerts.service import _notify  # local import avoids a cycle at module load
+
+    sent = failed = 0
+    with Session(get_engine()) as session:
+        events = session.exec(
+            select(AlertEvent)
+            .where(
+                AlertEvent.delivered_at.is_(None),
+                AlertEvent.resolved_at.is_(None),
+                AlertEvent.next_retry_at.is_not(None),
+                AlertEvent.next_retry_at <= utcnow(),
+                AlertEvent.delivery_attempts < 3,
+            )
+            .limit(50)
+        ).all()
+        for event in events:
+            domain = session.get(Domain, event.domain_id)
+            if domain is None:
+                continue
+            results = await _notify(event, domain, settings, resolved=False)
+            if results and all(item.ok for item in results):
+                sent += 1
+            else:
+                failed += 1
+            session.add(event)
+            session.commit()
+    return {"retried": len(events), "sent": sent, "failed": failed}
+
+
+async def job_digest() -> dict:
+    settings = get_settings()
+    if not settings.digest_enabled:
+        return {"skipped": "disabled"}
+    with Session(get_engine()) as session:
+        state = session.get(SyncState, DIGEST_STATE_KEY)
+        if state is not None:
+            try:
+                last = datetime.fromisoformat(state.value.replace("Z", "+00:00"))
+            except ValueError:
+                last = None
+            if last is not None:
+                if last.tzinfo is None:
+                    last = last.replace(tzinfo=timezone.utc)
+                if utcnow() - last < timedelta(days=settings.digest_days):
+                    return {"skipped": "not due"}
+        result = await send_digest(session, settings, days=settings.digest_days)
+        if result.get("ok"):
+            value = utcnow().replace(microsecond=0).isoformat()
+            if state is None:
+                session.add(SyncState(key=DIGEST_STATE_KEY, value=value))
+            else:
+                state.value = value
+                state.updated_at = utcnow()
+                session.add(state)
+            session.commit()
+        return {
+            "ok": result.get("ok", False),
+            "error": result.get("error"),
+            "domains": len(result.get("domains", [])),
+        }
 
 
 async def job_alerts() -> dict:
@@ -207,6 +286,13 @@ def job_specs() -> list[JobSpec]:
             initial_delay=settings.jobs_initial_delay_seconds + 10,
         ),
         JobSpec(
+            name="alert_retry",
+            label="Alert delivery retry",
+            interval_seconds=15 * 60,
+            runner=job_retry_alerts,
+            initial_delay=240,
+        ),
+        JobSpec(
             name="ptr_enrichment",
             label="Reverse DNS for sending IPs",
             interval_seconds=6 * 3600,
@@ -219,6 +305,19 @@ def job_specs() -> list[JobSpec]:
             interval_seconds=settings.alert_interval_minutes * 60,
             runner=job_alerts,
             initial_delay=settings.jobs_initial_delay_seconds + 45,
+        ),
+        *(
+            [
+                JobSpec(
+                    name="digest",
+                    label="Weekly email digest",
+                    interval_seconds=6 * 3600,
+                    runner=job_digest,
+                    initial_delay=120,
+                )
+            ]
+            if settings.digest_enabled
+            else []
         ),
         *(
             [

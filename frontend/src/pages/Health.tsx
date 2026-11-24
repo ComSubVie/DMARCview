@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { CheckIcon, expiryTone, overallMeta, statusClass, statusMeta } from "../components/health-ui";
+import { ExpectedSourcesCard } from "../components/ExpectedSourcesCard";
 import { Badge, EmptyState, Skeleton } from "../components/ui";
 import { dateTime, relativeTime } from "../lib/format";
 import { useData } from "../state";
@@ -196,6 +197,7 @@ function DomainProfileCard({ domain }: { domain: string }) {
   const { toast, refresh } = useData();
   const [displayName, setDisplayName] = useState("");
   const [notes, setNotes] = useState("");
+  const [tags, setTags] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -206,6 +208,7 @@ function DomainProfileCard({ domain }: { domain: string }) {
         if (cancelled) return;
         setDisplayName(profile.display_name ?? "");
         setNotes(profile.notes ?? "");
+        setTags((profile.tags ?? []).join(", "));
       })
       .catch(() => {
         /* the profile is optional; the rest of the page still works */
@@ -221,6 +224,10 @@ function DomainProfileCard({ domain }: { domain: string }) {
       await api.updateDomainProfile(domain, {
         display_name: displayName.trim() || null,
         notes: notes.trim() || null,
+        tags: tags
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
       });
       await refresh();
       toast("Domain profile saved");
@@ -250,6 +257,16 @@ function DomainProfileCard({ domain }: { domain: string }) {
               placeholder={domain}
             />
             <span className="tiny muted">Shown in the domain picker instead of the raw name.</span>
+          </div>
+          <div className="field span-2">
+            <label htmlFor="domain-tags">Groups / tags</label>
+            <input
+              id="domain-tags"
+              value={tags}
+              onChange={(event) => setTags(event.target.value)}
+              placeholder="production, client-a"
+            />
+            <span className="tiny muted">Comma-separated labels for grouping domains in the fleet.</span>
           </div>
           <div className="field span-2">
             <label htmlFor="domain-notes">Notes</label>
@@ -774,6 +791,7 @@ export function HealthPage() {
       </div>
 
       <DomainProfileCard domain={health.domain} />
+      <ExpectedSourcesCard domain={health.domain} />
       <SettingsCard
         health={health}
         onSaved={(settings) => setHealth({ ...health, settings })}
