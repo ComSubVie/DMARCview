@@ -160,3 +160,52 @@ def test_fcrdns_mismatch_and_no_ptr(session: Session, monkeypatch):
     meta = session.exec(select(IpMeta).where(IpMeta.ip == "198.51.100.4")).one()
     assert meta.fcrdns_status == "none"
     assert meta.fcrdns_forward is None
+
+
+def test_fcrdns_reuses_cached_ptr_for_existing_meta(session: Session, monkeypatch):
+    domain = Domain(name="cached.example")
+    session.add(domain)
+    session.commit()
+    session.refresh(domain)
+    report = Report(
+        domain_id=domain.id,
+        org_name="example.net",
+        report_id="cached-1",
+        policy_domain="cached.example",
+        date_begin=datetime.now(timezone.utc) - timedelta(days=1),
+        date_end=datetime.now(timezone.utc),
+        report_date=date.today(),
+        message_count=1,
+        aligned_count=1,
+        failed_count=0,
+        record_count=1,
+        source_count=1,
+        raw_sha256="d" * 64,
+        raw_xml=b"<feedback/>",
+    )
+    session.add(report)
+    session.commit()
+    session.refresh(report)
+    session.add(
+        SourceRecord(
+            report_id=report.id,
+            domain_id=domain.id,
+            report_date=report.report_date,
+            source_ip="192.0.2.50",
+            message_count=1,
+        )
+    )
+    session.add(IpMeta(ip="192.0.2.50", ptr="mail.cached.example", fcrdns_status="none"))
+    session.commit()
+    monkeypatch.setattr(
+        "app.jobs.get_dns_client",
+        lambda: FakePtrDns(
+            {"192.0.2.50": "mail.cached.example"},
+            {"mail.cached.example": ("192.0.2.50",)},
+        ),
+    )
+
+    asyncio.run(job_ptr_enrichment())
+    meta = session.exec(select(IpMeta).where(IpMeta.ip == "192.0.2.50")).one()
+    assert meta.fcrdns_status == "match"
+    assert meta.fcrdns_forward == "192.0.2.50"

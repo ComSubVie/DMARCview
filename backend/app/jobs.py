@@ -238,7 +238,12 @@ async def job_ptr_enrichment() -> dict:
         meta = metas.get(ip)
         needs_ptr = meta is None
         needs_asn = asn_resolver.available and (meta is None or meta.asn is None)
-        needs_fcrdns = meta is None or meta.fcrdns_status is None
+        # A PTR without a usable FCrDNS result is inconsistent; recompute it.
+        needs_fcrdns = (
+            meta is None
+            or meta.fcrdns_status is None
+            or (meta.fcrdns_status == "none" and bool(meta.ptr))
+        )
         if needs_ptr or needs_asn or needs_fcrdns:
             needs[ip] = {"ptr": needs_ptr, "asn": needs_asn, "fcrdns": needs_fcrdns}
     todo = list(needs)[:250]
@@ -252,8 +257,10 @@ async def job_ptr_enrichment() -> dict:
         ip: str,
     ) -> tuple[str, Optional[str], Optional[int], Optional[str], Optional[str], Optional[str]]:
         async with semaphore:
-            ptr = None
+            # Reuse a cached PTR when only FCrDNS needs (re)checking.
+            ptr = metas[ip].ptr if ip in metas else None
             if needs[ip]["ptr"]:
+                ptr = None
                 try:
                     answer = await dns.ptr(ip)
                 except Exception:  # noqa: BLE001

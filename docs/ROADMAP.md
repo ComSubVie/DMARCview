@@ -43,7 +43,7 @@ optional, trigger-based or deliberately parked work.
 
 ## Current status
 
-- **Tests:** 128 backend tests, plus the frontend type/build check in CI.
+- **Tests:** 129 backend tests, plus the frontend type/build check in CI.
 - **Schema:** Alembic `0001` through `0015`; upgrades run automatically on start.
 - **Runtime:** one container, one SQLite database, no Redis/Celery, no telemetry.
 
