@@ -740,6 +740,12 @@ export interface StorageInfo {
   source_records: number;
   oldest_report: string | null;
   backups: { count: number; last_at: string | null };
+  offsite: {
+    enabled: boolean;
+    providers: string[];
+    last_at: string | null;
+    last_error: string | null;
+  };
   retention_days: number;
 }
 

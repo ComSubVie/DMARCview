@@ -178,8 +178,8 @@ SPECS: dict[str, RuleSpec] = {
         ),
         RuleSpec(
             kind="job_failure",
-            label="Health/probe job failing",
-            description="Scheduled health or transport-probe runs are raising per-domain errors.",
+            label="Scheduled job failing",
+            description="A scheduled health, probe or backup run is raising errors.",
             severity="critical",
             fields=(
                 FieldSpec("failures", "Consecutive failures", "int", 1, 1, 10, ""),

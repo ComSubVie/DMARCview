@@ -145,6 +145,8 @@ public payload may include sources only when the link allows it, and must always
 envelope from/to, identities and other header-from domains. Public responses set
 `no-referrer`, `noindex` and `no-store`.
 
+**Off-box backups bundle the database and archive.** Scheduled/manual backups upload a `.tar.gz` containing the SQLite snapshot and `data/archive/`; never include `.env`, tokens or credentials. Restore accepts `.db` or `.tar.gz` and takes a safety snapshot first.
+
 **Retention archives raw payloads before deleting anything.** `app/retention.py` writes
 `data/archive/YYYY/MM/` first, then removes reports and child rows; `--yes` is required for a
 real run, and the scheduler only enables it when `RETENTION_DAYS > 0`. Processed-message
@@ -229,13 +231,13 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
 the user asks for them. Export, fleet comparison, retention, DMARCbis and decision support are
-delivered, including v1.15 alerts and per-domain HELO. No mandatory roadmap work remains. MFA stays
-parked; off-box backup, RUF and platform work remain optional/trigger-based.
+delivered, including v1.16 off-box backups. No mandatory roadmap work remains. MFA stays
+parked; RUF and platform work remain optional/trigger-based.
 
 ## Security expectations
 
 Single-admin session auth with PBKDF2, origin checks, CSP and a login throttle. Never weaken
 these to make a feature easier. Do not log credentials, bearer tokens or report contents.
 Outbound connections are limited to the configured JMAP server, DNS resolvers, certificate
-probes and the explicit GeoIP download. The public share endpoint is unauthenticated but
+probes, the explicit GeoIP download and the configured WebDAV/S3 backup targets. The public share endpoint is unauthenticated but
 must stay read-only, token-scoped, rate-limited and covered by the stripping rules above.

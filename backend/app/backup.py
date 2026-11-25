@@ -6,7 +6,10 @@ A plain copy of a live SQLite database (or just the WAL) can be inconsistent;
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
+import tarfile
+import tempfile
 from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,6 +59,68 @@ def backup_database(
     return target
 
 
+def create_bundle(
+    snapshot: Path,
+    archive_dir: Optional[Path] = None,
+    dest_dir: Optional[Path] = None,
+) -> Path:
+    """Bundle a database snapshot and the raw report archive as ``.tar.gz``."""
+    snapshot = Path(snapshot)
+    target_dir = Path(dest_dir) if dest_dir else snapshot.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+    bundle = target_dir / f"{snapshot.stem}.tar.gz"
+    with tarfile.open(bundle, "w:gz") as tar:
+        tar.add(snapshot, arcname=snapshot.name)
+        if archive_dir is not None and Path(archive_dir).is_dir():
+            root = Path(archive_dir)
+            for path in sorted(root.rglob("*")):
+                if path.is_file():
+                    tar.add(path, arcname=str(Path("archive") / path.relative_to(root)))
+    return bundle
+
+
+def bundle_sha256(bundle: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(bundle).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def is_bundle(path: Path) -> bool:
+    try:
+        return tarfile.is_tarfile(path)
+    except OSError:
+        return False
+
+
+def extract_snapshot(bundle: Path, dest_dir: Path) -> Path:
+    """Extract the one database member from a backup bundle."""
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(bundle, "r:*") as tar:
+        members = [
+            member
+            for member in tar.getmembers()
+            if member.isfile()
+            and member.name.endswith(".db")
+            and not member.name.startswith("archive/")
+            and not Path(member.name).is_absolute()
+            and ".." not in Path(member.name).parts
+        ]
+        if len(members) != 1:
+            raise BackupError("bundle must contain exactly one database snapshot")
+        member = members[0]
+        source = tar.extractfile(member)
+        if source is None:
+            raise BackupError("could not read database snapshot from bundle")
+        target = Path(dest_dir) / Path(member.name).name
+        with target.open("wb") as handle:
+            while chunk := source.read(1024 * 1024):
+                handle.write(chunk)
+    return target
+
+
 def verify_snapshot(path: Path) -> None:
     """Raise BackupError unless *path* is a readable, consistent SQLite database."""
     path = Path(path)
@@ -87,38 +152,50 @@ def restore_database(
     db_path: Optional[Path] = None,
     safety: bool = True,
 ) -> Path:
-    """Restore a snapshot, taking a safety backup of the current database first.
+    """Restore a snapshot (``.db`` or ``.tar.gz``), taking a safety backup first.
 
     The caller must stop the web process: SQLite cannot safely replace a file
     while another process holds it open. The CLI enforces an explicit --yes.
     """
     settings = get_settings()
-    source_path = Path(snapshot).expanduser()
-    target_path = Path(db_path) if db_path else settings.db_path
-    if target_path is None:
-        raise BackupError("no database path configured")
-    if source_path.resolve() == target_path.resolve():
-        raise BackupError("snapshot and live database are the same file")
-    verify_snapshot(source_path)
-
-    safety_path: Optional[Path] = None
-    if safety and target_path.exists():
-        safety_path = backup_database(db_path=target_path)
-
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target_path.with_suffix(target_path.suffix + ".restore-tmp")
+    candidate = Path(snapshot).expanduser()
+    if not candidate.exists() or not candidate.is_file():
+        raise BackupError(f"snapshot not found at {candidate}")
+    temp_dir: Optional[tempfile.TemporaryDirectory] = None
     try:
-        temporary.write_bytes(source_path.read_bytes())
-        verify_snapshot(temporary)
-        for suffix in ("-wal", "-shm"):
-            stale = Path(str(target_path) + suffix)
-            if stale.exists():
-                stale.unlink()
-        temporary.replace(target_path)
-        verify_snapshot(target_path)
-    except Exception:
-        temporary.unlink(missing_ok=True)
-        if safety_path is not None and safety_path.exists() and not target_path.exists():
-            target_path.write_bytes(safety_path.read_bytes())
-        raise
-    return safety_path or Path()
+        if is_bundle(candidate):
+            temp_dir = tempfile.TemporaryDirectory(prefix="dmarcview-restore-")
+            source_path = extract_snapshot(candidate, Path(temp_dir.name))
+        else:
+            source_path = candidate
+        target_path = Path(db_path) if db_path else settings.db_path
+        if target_path is None:
+            raise BackupError("no database path configured")
+        if source_path.resolve() == target_path.resolve():
+            raise BackupError("snapshot and live database are the same file")
+        verify_snapshot(source_path)
+
+        safety_path: Optional[Path] = None
+        if safety and target_path.exists():
+            safety_path = backup_database(db_path=target_path)
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target_path.with_suffix(target_path.suffix + ".restore-tmp")
+        try:
+            temporary.write_bytes(source_path.read_bytes())
+            verify_snapshot(temporary)
+            for suffix in ("-wal", "-shm"):
+                stale = Path(str(target_path) + suffix)
+                if stale.exists():
+                    stale.unlink()
+            temporary.replace(target_path)
+            verify_snapshot(target_path)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            if safety_path is not None and safety_path.exists() and not target_path.exists():
+                target_path.write_bytes(safety_path.read_bytes())
+            raise
+        return safety_path or Path()
+    finally:
+        if temp_dir is not None:
+            temp_dir.cleanup()

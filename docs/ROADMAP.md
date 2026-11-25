@@ -1,13 +1,13 @@
 # Roadmap
 
-_Rev 25 · 25 November 2026 · alert coverage, job failures and HELO clarity (v1.15.2)_
+_Rev 26 · 25 November 2026 · off-box backups (v1.16)_
 
 DMARCView began as a self-hosted answer to **“what happened?”** and grew into a complete
 reporting and operations dashboard: **“is my configuration correct?”**, **“tell me when it
 changes”**, **“why did it change?”**, **“what should I do next?”**, and now **“can I prove what
 changed and who changed it?”**.
 
-**Current development release: v1.15.2.** The mandatory roadmap is complete. What remains is
+**Current development release: v1.16.0.** The mandatory roadmap is complete. What remains is
 optional, trigger-based or deliberately parked work.
 
 ## Delivered
@@ -17,14 +17,15 @@ optional, trigger-based or deliberately parked work.
 | **Ingestion** | JMAP polling with incremental cursor and full-mailbox backfill; DMARC RUA from zip/gzip/inline; TLS-RPT; idempotent message/attachment/report dedupe; raw report browser and downloads. |
 | **Analytics** | Compliance, sources, sender identities, ASN/PTR context, period changes, volume anomaly, coverage, reporter quality, TLS delivery, policy advisor and a read-only policy simulator. |
 | **Health** | Live DMARC (including RFC 9989 tree walk/PSD), SPF, DKIM rotation, MX with PTR checks, MTA-STS (including MX-consistency), TLS-RPT, DNSSEC, BIMI, CAA, HELO/EHLO DNS; transport STARTTLS/certificate/DANE probes; snapshot history and DNS diffs. |
-| **Alerts** | Twelve rules over reports, health snapshots, jobs and probes, including health regression, JMAP sync failure and health/probe job failure; SMTP/JMAP email, Telegram/Signal/webhook; dedupe, cooldown, resolution; per-domain overrides; delivery retry; weekly digest. |
+| **Alerts** | Twelve rules over reports, health snapshots, jobs and probes, including health regression, JMAP sync failure and scheduled-job failures; SMTP/JMAP email, Telegram/Signal/webhook; dedupe, cooldown, resolution; per-domain overrides; delivery retry; weekly digest. |
 | **Distribution** | Signed read-only share links; CSV/JSON/raw export; sortable fleet comparison; domain tags/groups; saved fleet views. |
-| **Operations** | Scheduler and job history; local SQLite backup and verified restore; retention with raw archiving; known-sender expectations; append-only audit log; PTR/FCrDNS enrichment for sending IPs. |
+| **Operations** | Scheduler and job history; local SQLite backup plus WebDAV/S3 off-box bundles; verified restore; retention with raw archiving; known-sender expectations; append-only audit log; PTR/FCrDNS enrichment for sending IPs. |
 | **Signal quality** | Every TLS-RPT policy domain attributed separately; RFC 9990 report warnings; DMARC/SPF/MTA-STS/TLS-RPT change history. |
 | **DMARCbis** | Report fields `np`, `testing`, `discovery_method`; parent/PSD discovery; external `rua`/`ruf` authorization; readiness panel; effective-policy coverage. Existing author-domain logic is unchanged. |
 
 ## Recent releases
 
+- **v1.16 — off-box backups.** Scheduled or manual local snapshots bundled with the raw archive and uploaded to WebDAV and/or S3-compatible storage.
 - **v1.15 — alert coverage and per-domain HELO.** Health-check regression, global JMAP-sync and health/probe-job alerts, domain-specific HELO/EHLO hostnames, and clearer HELO DNS-versus-outbound wording.
 - **v1.14 — network checks.** Sending-IP PTR/FCrDNS, MX PTR confirmation, MTA-STS MX consistency, optional HELO/EHLO DNS readiness and CAA checks.
 - **v1.13 — JMAP email transport.** Alerts and the weekly digest can send through SMTP or
@@ -43,7 +44,7 @@ optional, trigger-based or deliberately parked work.
 
 ## Current status
 
-- **Tests:** 129 backend tests, plus the frontend type/build check in CI.
+- **Tests:** 133 backend tests, plus the frontend type/build check in CI.
 - **Schema:** Alembic `0001` through `0015`; upgrades run automatically on start.
 - **Runtime:** one container, one SQLite database, no Redis/Celery, no telemetry.
 
@@ -51,7 +52,6 @@ Known limits:
 
 - DNSSEC relies on the resolver's AD flag; BIMI checks presence only; transport probes need
   outbound port 25.
-- No off-box backup target yet. Restore is local and archive restore is separate.
 - MFA is not implemented (parked); the audit log is.
 - RUF is not ingested.
 - Timeline/DNS-diff auto-history covers the last 20 health snapshots and 180 days.
@@ -63,14 +63,13 @@ Known limits:
 
 | Priority | Item | Effort | When |
 | --- | --- | --- | --- |
-| **1** | **Off-box backup** — S3/WebDAV target, include `data/archive/`, checksum, retention and a tested restore drill. | 1–2 d | Recommended next; current backup is local only. |
-| **2** | **MFA** — TOTP, recovery codes and session invalidation. The audit log already exists. | 1–2 d | When the dashboard is exposed beyond a trusted network. |
-| **3** | **RUF/ARF reports** — headers/auth metadata only, redaction, per-domain opt-in and short retention. | 3–4 d | Only with a real receiver sample and a settled PII policy. |
-| **4** | **Platform** — PostgreSQL, IMAP transport, read-only API tokens and Prometheus `/api/metrics`. | 8–10 d | >10M source records, multiple instances, external BI or automation demand. |
-| **5** | **Share-link throttling** — shared store or proxy-level limit. | 0.5–1 d | Multiple workers/replicas. |
-| **6** | **Timeline polish** — configurable history depth; optional saved-view sharing/rename. | 0.5–1 d | Convenience, not a blocker. |
+| **1** | **MFA** — TOTP, recovery codes and session invalidation. The audit log already exists. | 1–2 d | When the dashboard is exposed beyond a trusted network. |
+| **2** | **RUF/ARF reports** — headers/auth metadata only, redaction, per-domain opt-in and short retention. | 3–4 d | Only with a real receiver sample and a settled PII policy. |
+| **3** | **Platform** — PostgreSQL, IMAP transport, read-only API tokens and Prometheus `/api/metrics`. | 8–10 d | >10M source records, multiple instances, external BI or automation demand. |
+| **4** | **Share-link throttling** — shared store or proxy-level limit. | 0.5–1 d | Multiple workers/replicas. |
+| **5** | **Timeline polish** — configurable history depth; optional saved-view sharing/rename. | 0.5–1 d | Convenience, not a blocker. |
 
-No mandatory item is open. The first recommended operational improvement is **off-box backup**.
+No mandatory item is open. Off-box backup is now delivered; the remaining work is optional.
 
 ## Deliberately not planned
 

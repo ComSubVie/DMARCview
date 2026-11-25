@@ -318,7 +318,7 @@ export function IngestPage() {
                     icon={<Clock size={11} />}
                     label="Oldest report"
                     value={storage.oldest_report ? dateTime(storage.oldest_report).split(",")[0] : "—"}
-                    sub="retention: keep forever"
+                    sub={storage.retention_days > 0 ? `retention: ${storage.retention_days} days` : "retention: keep forever"}
                   />
                   <Tile
                     icon={<Database size={11} />}
@@ -329,7 +329,11 @@ export function IngestPage() {
                 </div>
                 <p className="tiny muted" style={{ marginTop: 10, lineHeight: 1.6 }}>
                   Retention is opt-in. Until you set <code>RETENTION_DAYS</code>, nothing is pruned.
-                  Backups are consistent SQLite snapshots written next to the database.
+                  Backups are consistent SQLite snapshots written next to the database. Off-box
+                  status: {storage.offsite.providers.length > 0
+                    ? `${storage.offsite.providers.join(" + ")}${storage.offsite.last_at ? ` · last ${relativeTime(storage.offsite.last_at)}` : " · not uploaded yet"}`
+                    : "not configured"}.
+                  {storage.offsite.last_error ? ` Last error: ${storage.offsite.last_error}` : ""}
                 </p>
               </>
             )}

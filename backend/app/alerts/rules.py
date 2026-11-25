@@ -435,7 +435,11 @@ def sync_failure(session: Session, domain: Domain | None, cond: dict, now: datet
 def job_failure(session: Session, domain: Domain | None, cond: dict, now: datetime) -> list[Finding]:
     findings: list[Finding] = []
     threshold = int(cond.get("failures", 1))
-    for name, label in (("health_checks", "Health checks"), ("transport_probes", "Transport probes")):
+    for name, label in (
+        ("health_checks", "Health checks"),
+        ("transport_probes", "Transport probes"),
+        ("backup", "Backup"),
+    ):
         runs = session.exec(
             select(JobRun)
             .where(JobRun.name == name)

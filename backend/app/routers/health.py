@@ -25,7 +25,16 @@ from ..health.service import (
     update_settings,
 )
 from ..jobs import job_specs, status as jobs_status
-from ..models import Domain, DomainHealthSnapshot, JobRun, Report, SourceRecord, TlsReport
+from ..models import (
+    Domain,
+    DomainHealthSnapshot,
+    JobRun,
+    Report,
+    SourceRecord,
+    SyncState,
+    TlsReport,
+)
+from ..offsite import targets as offsite_targets
 
 router = APIRouter(prefix="/api", tags=["health"], dependencies=[Depends(current_user)])
 
@@ -182,6 +191,11 @@ def jobs(session: Session = Depends(get_session)) -> dict:
     return {"items": items, "scheduled": enabled}
 
 
+def _state_value(session: Session, key: str) -> Optional[str]:
+    row = session.get(SyncState, key)
+    return row.value if row is not None and row.value else None
+
+
 def _one_int(session: Session, statement) -> int:
     value = session.exec(statement).one()
     if isinstance(value, (tuple, list)):
@@ -236,5 +250,11 @@ def storage(session: Session = Depends(get_session)) -> dict:
         if oldest
         else None,
         "backups": {"count": len(backups), "last_at": last_backup},
-        "retention_days": 0,
+        "offsite": {
+            "enabled": settings.backup_enabled,
+            "providers": offsite_targets(settings),
+            "last_at": _state_value(session, "backup.last_offsite_at"),
+            "last_error": _state_value(session, "backup.last_offsite_error"),
+        },
+        "retention_days": settings.retention_days,
     }

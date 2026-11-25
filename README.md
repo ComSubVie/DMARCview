@@ -69,8 +69,9 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
   compare every domain side by side (volume, alignment, TLS, policy, health, 14-day trend).
 - **Report browser.** Search, filter, inspect every record, download the original XML/JSON;
   RFC 9990 reporter warnings are shown separately from DMARC failures.
-- **Boring to operate.** One container, one SQLite file, consistent backups with a tested
-  restore path, no external services, no telemetry, no third-party IP lookups (GeoIP is local).
+- **Boring to operate.** One container, one SQLite file, consistent local backups plus optional
+  WebDAV/S3 off-box bundles, a tested restore path, no telemetry and no third-party IP lookups
+  (GeoIP is local).
 
 | Domain health | Alerts |
 | --- | --- |
@@ -280,6 +281,14 @@ All settings are environment variables (`.env` is loaded automatically).
 | `HELO_HOSTNAME` | — | Expected outbound EHLO/HELO FQDN for the DNS readiness check; does not configure Stalwart. A domain setting can override it. |
 | `JOBS_INITIAL_DELAY_SECONDS` | `25` | Delay before the first scheduled run after boot. |
 | `BACKUP_KEEP` | `14` | Local snapshots retained by `app.cli backup`. |
+| `BACKUP_ENABLED` | `false` | Schedule local backups and off-box uploads. |
+| `BACKUP_INTERVAL_HOURS` | `24` | Backup job cadence. |
+| `BACKUP_WEBDAV_URL` | — | Existing WebDAV folder for off-box bundles. |
+| `BACKUP_WEBDAV_USERNAME` / `BACKUP_WEBDAV_PASSWORD` | — | WebDAV basic-auth credentials. |
+| `BACKUP_S3_BUCKET` / `BACKUP_S3_REGION` | — / `us-east-1` | S3-compatible backup bucket. |
+| `BACKUP_S3_ENDPOINT` | AWS | S3-compatible endpoint (MinIO, B2, Wasabi). |
+| `BACKUP_S3_ACCESS_KEY` / `BACKUP_S3_SECRET_KEY` | — | S3 credentials; omit to use the instance role/default chain. |
+| `BACKUP_S3_PREFIX` | `dmarcview/` | Object-key prefix. |
 | `RETENTION_DAYS` | `0` | Archive raw payloads and prune reports older than this. `0` keeps forever. |
 | `ALERTS_ENABLED` | `true` | Run the alert evaluator on a schedule. |
 | `ALERT_INTERVAL_MINUTES` | `60` | Alert evaluation cadence. |
@@ -471,10 +480,12 @@ a DMARCbis readiness panel, external report authorization and effective-policy c
 adds the read-only policy simulator and the private domain timeline; v1.10 adds restore,
 weekly digest, reporter quality, known senders, per-domain alert overrides and domain groups;
 v1.11 added saved fleet views and signal quality: TLS policy attribution, RFC 9990 warnings and
-DNS change history. v1.12 completes operator visibility: editable alert overrides, DNS diff
-history, report-quality scores, delivery diagnostics/digest controls and an audit log. No
-mandatory roadmap work remains; off-box backup is the recommended next operational step, while
-MFA and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
+DNS change history. v1.12 completed operator visibility: editable alert overrides, DNS diff
+history, report-quality scores, delivery diagnostics/digest controls and an audit log. v1.13
+added JMAP email submission; v1.14 added network checks (sending-IP FCrDNS, MX PTR, MTA-STS MX
+consistency, HELO/EHLO DNS and CAA); v1.15 added regression/job alerts and per-domain HELO;
+v1.16 adds scheduled WebDAV/S3 off-box backups. No mandatory roadmap work remains; MFA and
+RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
 
@@ -482,7 +493,7 @@ MFA and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (129 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (133 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -566,7 +577,7 @@ The **Alerts** page evaluates twelve rules over the reports, health snapshots an
 | STARTTLS broken | a probe target fails to negotiate TLS (certificate failures go to the rule above) |
 | Health check regression | a check moves from healthy to warning/failure between snapshots |
 | JMAP sync failing | two consecutive scheduled JMAP syncs fail or finish partially (global rule) |
-| Health/probe job failing | a scheduled health-check or transport-probe run reports per-domain errors (global rule) |
+| Scheduled job failing | a scheduled health-check, probe or backup run reports errors (global rule) |
 
 Evaluation runs hourly and on demand. Incidents are deduplicated while open, repeated
 episodes are suppressed by a cooldown, and a resolution notice is sent when the condition
@@ -641,15 +652,45 @@ has run. Existing authored records keep their previous pass/warn/fail behaviour.
 last `BACKUP_KEEP` files in `data/backups/`. The Ingestion page shows database size, raw
 archive size and growth so the decision can be made with numbers.
 
-To restore, stop the web process first, then run:
+### Off-box backups
+
+With `BACKUP_ENABLED=true`, a scheduled job creates a local snapshot, bundles it with
+`data/archive/` as `dmarc-YYYYMMDD-HHMMSS.tar.gz`, and uploads it to every configured target:
+
+```env
+BACKUP_ENABLED=true
+BACKUP_WEBDAV_URL=https://cloud.example.com/remote.php/dav/files/admin/dmarcview
+BACKUP_WEBDAV_USERNAME=admin
+BACKUP_WEBDAV_PASSWORD=app-password
+
+# and/or
+BACKUP_S3_BUCKET=dmarcview-backups
+BACKUP_S3_ENDPOINT=https://s3.eu-central-003.backblazeb2.com
+BACKUP_S3_ACCESS_KEY=...
+BACKUP_S3_SECRET_KEY=...
+```
+
+Manual run:
+
+```bash
+python -m app.cli backup --offsite          # local snapshot + upload
+python -m app.cli backup --bundle           # keep a local .tar.gz bundle
+```
+
+The bundle contains the SQLite snapshot and the archive directory. Remote retention is left
+to the WebDAV/S3 provider (for example, an S3 lifecycle rule); the app only rotates local
+`BACKUP_KEEP` snapshots.
+
+Restore from either a local snapshot or a downloaded bundle:
 
 ```bash
 python -m app.cli restore data/backups/dmarc-YYYYMMDD-HHMMSS.db --yes
+python -m app.cli restore dmarc-YYYYMMDD-HHMMSS.tar.gz --yes
 ```
 
 Restore verifies the snapshot before replacing the live database and takes a safety snapshot
-of the current database first. The `--yes` flag is mandatory. Report archives under
-`data/archive/` are not part of the database snapshot and must be restored separately.
+of the current database first. For a bundle, only the database is restored from the archive;
+extract `archive/` separately if you also need the raw reports.
 
 Retention is **off by default** (`RETENTION_DAYS=0`). When set, a daily scheduler job archives
 each old report's original XML/JSON to `data/archive/YYYY/MM/` and then deletes the report and

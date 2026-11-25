@@ -9,3 +9,4 @@ maxminddb==3.3.0
 alembic==1.20.1
 dnspython==2.9.2
 cryptography==50.0.2
+boto3==1.44.11

@@ -17,6 +17,7 @@ from typing import Awaitable, Callable, Optional
 
 from sqlmodel import Session, select
 
+from .backup import backup_database, bundle_sha256, create_bundle
 from .config import get_settings
 from .db import get_engine
 from .alerts.service import evaluate as evaluate_alerts
@@ -34,6 +35,7 @@ from .models import (
     utcnow,
 )
 from .digest import send_digest
+from .offsite import OffsiteError, targets as offsite_targets, upload_bundle
 from .retention import prune
 
 log = logging.getLogger(__name__)
@@ -121,6 +123,51 @@ async def job_retention() -> dict:
         return {"skipped": "disabled"}
     with Session(get_engine()) as session:
         return prune(session, settings.retention_days)
+
+
+BACKUP_LAST_KEY = "backup.last_offsite_at"
+BACKUP_ERROR_KEY = "backup.last_offsite_error"
+
+
+def _set_backup_state(value: Optional[str], error: Optional[str]) -> None:
+    with Session(get_engine()) as session:
+        for key, text in ((BACKUP_LAST_KEY, value), (BACKUP_ERROR_KEY, error)):
+            if text is None:
+                continue
+            row = session.get(SyncState, key)
+            if row is None:
+                session.add(SyncState(key=key, value=text[:512]))
+            else:
+                row.value = text[:512]
+                row.updated_at = utcnow()
+                session.add(row)
+        session.commit()
+
+
+async def job_backup() -> dict:
+    settings = get_settings()
+    if not settings.backup_enabled:
+        return {"skipped": "disabled"}
+    snapshot = backup_database()
+    if not offsite_targets(settings):
+        _set_backup_state(utcnow().replace(microsecond=0).isoformat(), None)
+        return {"snapshot": snapshot.name, "providers": [], "bytes": snapshot.stat().st_size}
+    bundle = create_bundle(snapshot, settings.data_dir / "archive", settings.data_dir / "backups")
+    try:
+        results = await upload_bundle(settings, bundle)
+    except OffsiteError as exc:
+        _set_backup_state(None, str(exc))
+        raise
+    finally:
+        if bundle.exists():
+            bundle.unlink()
+    _set_backup_state(utcnow().replace(microsecond=0).isoformat(), "")
+    return {
+        "snapshot": snapshot.name,
+        "providers": [item["provider"] for item in results],
+        "bytes": sum(int(item.get("bytes", 0)) for item in results),
+        "sha256": bundle_sha256(snapshot),
+    }
 
 
 DIGEST_STATE_KEY = "digest.last_sent_at"
@@ -376,6 +423,19 @@ def job_specs() -> list[JobSpec]:
                 )
             ]
             if settings.retention_days > 0
+            else []
+        ),
+        *(
+            [
+                JobSpec(
+                    name="backup",
+                    label="Backup and off-box upload",
+                    interval_seconds=settings.backup_interval_hours * 3600,
+                    runner=job_backup,
+                    initial_delay=300,
+                )
+            ]
+            if settings.backup_enabled
             else []
         ),
     ]

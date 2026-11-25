@@ -20,10 +20,11 @@ from pathlib import Path
 
 from sqlmodel import Session, func, select
 
-from .backup import BackupError, backup_database, restore_database
+from .backup import BackupError, backup_database, create_bundle, restore_database
 from .config import get_settings
 from .db import get_engine, init_db
 from .geoip import get_geo_resolver
+from .offsite import OffsiteError, upload_bundle
 from .ingest.dmarc import DmarcParseError, parse_dmarc
 from .ingest.jmap import JMAPClient
 from .ingest.mime import MimeParseError, extract_payloads
@@ -318,6 +319,21 @@ def cmd_backup(args: argparse.Namespace) -> int:
         print(f"backup failed: {exc}", file=sys.stderr)
         return 1
     print(f"backup written to {target}")
+    if not (args.bundle or args.offsite):
+        return 0
+    settings = get_settings()
+    bundle = create_bundle(target, settings.data_dir / "archive", target.parent)
+    print(f"bundle written to {bundle}")
+    if args.offsite:
+        try:
+            results = asyncio.run(upload_bundle(settings, bundle))
+        except OffsiteError as exc:
+            print(f"off-box upload failed: {exc}", file=sys.stderr)
+            return 1
+        for result in results:
+            print(f"uploaded to {result['provider']}: {result['key']} ({result['bytes']} bytes)")
+        if not args.bundle:
+            bundle.unlink(missing_ok=True)
     return 0
 
 
@@ -440,6 +456,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("backup", help="write a consistent SQLite backup")
     p.add_argument("--destination", help="directory for the snapshot")
     p.add_argument("--keep", type=int, default=None, help="number of snapshots to keep")
+    p.add_argument("--bundle", action="store_true", help="keep a .tar.gz with the database and archive")
+    p.add_argument("--offsite", action="store_true", help="upload the bundle to configured off-box targets")
     p.set_defaults(func=cmd_backup)
 
     p = sub.add_parser("prune", help="archive and delete reports older than RETENTION_DAYS")
