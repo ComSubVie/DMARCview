@@ -688,6 +688,7 @@ export interface DomainSettings {
   domain: string;
   dkim_selectors: string[];
   probe_targets: string[];
+  helo_hostname: string | null;
   expected_report_hours: number;
   dns_checks_enabled: boolean;
   checks_muted_until: string | null;
@@ -779,6 +780,7 @@ export interface AlertKindSpec {
   label: string;
   description: string;
   severity: AlertSeverity;
+  scope?: "domain" | "global";
   fields: AlertFieldSpec[];
 }
 
@@ -817,6 +819,7 @@ export interface AlertRuleItem {
   enabled: boolean;
   condition: Record<string, number>;
   cooldown_minutes: number;
+  scope?: "domain" | "global";
   open: number;
   last_triggered_at: string | null;
 }

@@ -79,6 +79,7 @@ class Settings:
     jmap_from: str = ""
     jmap_poll_seconds: int = 300
     ingest_initial_days: int = 90
+    helo_hostname: str = ""
 
     geoip_db: str = ""
     geoip_asn_db: str = ""
@@ -176,6 +177,7 @@ def _build_settings() -> Settings:
         jmap_from=_env("JMAP_FROM") or _env("SMTP_FROM"),
         jmap_poll_seconds=max(30, _env_int("JMAP_POLL_SECONDS", 300)),
         ingest_initial_days=max(1, _env_int("INGEST_INITIAL_DAYS", 90)),
+        helo_hostname=_env("HELO_HOSTNAME").strip().lower().rstrip("."),
         geoip_db=_env("GEOIP_DB"),
         geoip_asn_db=_env("GEOIP_ASN_DB"),
         monthly_message_alert=_env_int("MONTHLY_MESSAGE_ALERT", 10000),

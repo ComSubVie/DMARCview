@@ -4,7 +4,7 @@ services:
       context: .
     # Override to run a published image instead of building locally, e.g.
     #   DMARCVIEW_IMAGE=ghcr.io/<user>/dmarcview:latest docker compose up -d --no-build
-    image: ${DMARCVIEW_IMAGE:-dmarcview:1.14.0}
+    image: ${DMARCVIEW_IMAGE:-dmarcview:1.15.0}
     container_name: dmarcview
     restart: unless-stopped
     init: true

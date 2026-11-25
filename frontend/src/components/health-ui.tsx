@@ -5,6 +5,7 @@ import {
   KeyRound,
   Lock,
   LockKeyhole,
+  Mail,
   Server,
   ShieldCheck,
   type LucideIcon,
@@ -44,6 +45,8 @@ const ICONS: Record<string, LucideIcon> = {
   tls_rpt: LockKeyhole,
   dnssec: Fingerprint,
   bimi: BadgeCheck,
+  caa: Lock,
+  helo: Mail,
 };
 
 export function CheckIcon({ checkKey, size = 15 }: { checkKey: string; size?: number }) {

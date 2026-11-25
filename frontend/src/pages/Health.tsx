@@ -311,6 +311,7 @@ function SettingsCard({
   const { toast } = useData();
   const [selectors, setSelectors] = useState("");
   const [targets, setTargets] = useState("");
+  const [helo, setHelo] = useState("");
   const [hours, setHours] = useState(48);
   const [enabled, setEnabled] = useState(true);
   const [mutedUntil, setMutedUntil] = useState("");
@@ -319,6 +320,7 @@ function SettingsCard({
   useEffect(() => {
     setSelectors(health.settings.dkim_selectors.join(", "));
     setTargets(health.settings.probe_targets.join("\n"));
+    setHelo(health.settings.helo_hostname ?? "");
     setHours(health.settings.expected_report_hours);
     setEnabled(health.settings.dns_checks_enabled);
     setMutedUntil(toLocalInput(health.settings.checks_muted_until));
@@ -336,6 +338,7 @@ function SettingsCard({
           .split("\n")
           .map((value) => value.trim())
           .filter(Boolean),
+        helo_hostname: helo.trim() || null,
         expected_report_hours: hours,
         dns_checks_enabled: enabled,
         checks_muted_until: mutedUntil ? new Date(mutedUntil).toISOString() : null,
@@ -413,6 +416,20 @@ function SettingsCard({
             <span className="tiny muted">
               Health checks and transport probes skip this domain until then. Manual runs still
               work. Leave empty to unmute.
+            </span>
+          </div>
+          <div className="field span-2">
+            <label htmlFor="helo">Expected outbound HELO/EHLO hostname</label>
+            <input
+              id="helo"
+              value={helo}
+              onChange={(event) => setHelo(event.target.value)}
+              placeholder="Inherit from HELO_HOSTNAME"
+            />
+            <span className="tiny muted">
+              The EHLO name Stalwart actually sends. This only feeds the DNS readiness check; it
+              does not configure Stalwart. Leave blank to inherit <code>HELO_HOSTNAME</code>, and
+              override only if this domain uses a different outbound EHLO name.
             </span>
           </div>
           <div className="field span-2">
@@ -649,8 +666,10 @@ export function HealthPage() {
             <span style={{ width: `${Math.max(3, health.score * 100)}%` }} />
           </div>
           <p className="tiny muted" style={{ marginTop: 8, lineHeight: 1.6 }}>
-            Core checks cover DMARC, SPF, DKIM and MX. Optional checks add MTA-STS, TLS-RPT, DNSSEC
-            and BIMI. Transport probes verify STARTTLS and certificate expiry on the actual hosts.
+            Core checks cover DMARC, SPF, DKIM and MX. Optional checks add MTA-STS, TLS-RPT, DNSSEC,
+            BIMI, CAA and HELO/EHLO DNS (when configured). The HELO check validates DNS only;
+            it does not observe Stalwart’s outbound session. Transport probes verify STARTTLS and
+            certificate expiry on the actual hosts.
           </p>
         </div>
         <div className="health-hero-actions">

@@ -47,6 +47,7 @@ async def run_health(
     http: Optional[BaseFetcher] = None,
     http_timeout: float = 6.0,
     discovered_selectors: Optional[list[tuple[str, str]]] = None,
+    helo_hostname: str = "",
 ) -> HealthReport:
     started = time.perf_counter()
     ctx = CheckContext(
@@ -57,6 +58,7 @@ async def run_health(
         discovered_selectors=discovered_selectors or [],
         reported_policy=reported_policy or {},
         http_timeout=http_timeout,
+        helo_hostname=helo_hostname,
     )
     results = await asyncio.gather(*(_run_one(spec, ctx) for spec in CHECKS))
     overall, score, passed, total = overall_status(results)

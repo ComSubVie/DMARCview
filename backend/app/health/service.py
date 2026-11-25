@@ -51,6 +51,7 @@ def update_settings(
     *,
     dkim_selectors: Optional[list[str]] = None,
     probe_targets: Optional[list[str]] = None,
+    helo_hostname: Optional[str] = None,
     expected_report_hours: Optional[int] = None,
     dns_checks_enabled: Optional[bool] = None,
     checks_muted_until: Optional[datetime] = None,
@@ -66,6 +67,9 @@ def update_settings(
         row.dkim_selectors = cleaned or list(DEFAULT_DKIM_SELECTORS)
     if probe_targets is not None:
         row.probe_targets = [target.strip()[:255] for target in probe_targets if target.strip()][:25]
+    if helo_hostname is not None:
+        value = helo_hostname.strip().lower().rstrip(".")
+        row.helo_hostname = value[:255] or None
     if expected_report_hours is not None:
         row.expected_report_hours = max(6, min(expected_report_hours, 24 * 14))
     if dns_checks_enabled is not None:
@@ -91,6 +95,7 @@ def serialise_settings(session: Session, domain: Domain) -> dict[str, Any]:
         "domain": domain.name,
         "dkim_selectors": row.dkim_selectors,
         "probe_targets": row.probe_targets,
+        "helo_hostname": row.helo_hostname,
         "expected_report_hours": row.expected_report_hours,
         "dns_checks_enabled": row.dns_checks_enabled,
         "checks_muted_until": _iso(row.checks_muted_until),
@@ -181,6 +186,7 @@ async def run_and_store_health(
         dns=dns,
         http=http,
         http_timeout=get_settings().http_timeout_seconds,
+        helo_hostname=settings_row.helo_hostname or get_settings().helo_hostname,
     )
     snapshot = store_report(session, domain.id, report)
     return serialise_snapshot(snapshot)

@@ -21,6 +21,8 @@ from app.models import (
     Domain,
     SourceExpectation,
     DomainHealthSnapshot,
+    IngestRun,
+    JobRun,
     Report,
     SourceRecord,
     TransportProbe,
@@ -312,7 +314,7 @@ def test_api_rules_and_manual_run(auth_client, session: Session):
     add_record(session, report, domain, ip="192.0.2.1", count=100, dkim_pass=False, spf_pass=False)
 
     listing = auth_client.get("/api/alerts").json()
-    assert len(listing["rules"]) == len(listing["kinds"]) == 9
+    assert len(listing["rules"]) == len(listing["kinds"]) == 12
     assert {channel["kind"] for channel in listing["channels"]} == {
         "smtp",
         "jmap",
@@ -388,3 +390,120 @@ def test_email_transport_does_not_require_alert_recipients(monkeypatch):
 
     missing = asyncio.run(channels.send_email(settings, "Digest", "body"))
     assert missing.ok is False
+
+
+def _snapshot(session: Session, domain: Domain, when: datetime, status: str):
+    session.add(
+        DomainHealthSnapshot(
+            domain_id=domain.id,
+            checked_at=when,
+            overall=status,
+            score=1.0 if status == "pass" else 0.5,
+            core_passed=4 if status == "pass" else 3,
+            core_total=4,
+            results=[
+                {
+                    "key": "mta_sts",
+                    "label": "MTA-STS",
+                    "status": status,
+                    "summary": "policy valid" if status == "pass" else "policy MX mismatch",
+                    "evidence": {},
+                }
+            ],
+        )
+    )
+    session.commit()
+
+
+def test_health_regression_fires_on_worsening_check(session: Session):
+    domain = make_domain(session)
+    only_rule(session, "health_regression")
+    now = datetime.now(timezone.utc)
+    _snapshot(session, domain, now - timedelta(hours=12), "pass")
+    _snapshot(session, domain, now, "warn")
+
+    result = evaluate_now(session)
+    assert result["created"] == 1
+    event = session.exec(select(AlertEvent)).one()
+    assert event.domain_id == domain.id
+    assert event.dedupe_key == "health:mta_sts"
+    assert "regressed" in event.title.lower()
+
+
+def test_sync_failure_is_global_and_resolves(session: Session, monkeypatch):
+    from dataclasses import replace
+    from app.config import get_settings
+
+    monkeypatch.setattr(
+        "app.alerts.rules.get_settings",
+        lambda: replace(get_settings(), jmap_enabled=True),
+    )
+    only_rule(session, "sync_failure")
+    now = datetime.now(timezone.utc)
+    for index in range(2):
+        session.add(
+            IngestRun(
+                source="jmap",
+                status="error",
+                started_at=now - timedelta(minutes=10 - index),
+                finished_at=now - timedelta(minutes=9 - index),
+                error=f"auth failed {index}",
+            )
+        )
+    session.commit()
+
+    result = evaluate_now(session)
+    assert result["created"] == 1
+    event = session.exec(select(AlertEvent)).one()
+    assert event.domain_id is None
+    assert "JMAP sync failed" in event.title
+
+    session.add(
+        IngestRun(
+            source="jmap",
+            status="ok",
+            started_at=now + timedelta(minutes=1),
+            finished_at=now + timedelta(minutes=2),
+        )
+    )
+    session.commit()
+    result = evaluate_now(session)
+    assert result["resolved"] == 1
+    session.refresh(event)
+    assert event.resolved_at is not None
+
+
+def test_job_failure_alert_is_global_and_resolves(session: Session):
+    only_rule(session, "job_failure")
+    now = datetime.now(timezone.utc)
+    session.add(
+        JobRun(
+            name="health_checks",
+            status="ok",
+            started_at=now - timedelta(minutes=5),
+            finished_at=now - timedelta(minutes=4),
+            summary={"domains": 2, "ok": 1, "failed": 1, "errors": ["tgm.rocks: timeout"]},
+        )
+    )
+    session.commit()
+
+    result = evaluate_now(session)
+    assert result["created"] == 1
+    event = session.exec(select(AlertEvent)).one()
+    assert event.domain_id is None
+    assert "Health checks failed" in event.title
+
+    session.add(
+        JobRun(
+            name="health_checks",
+            status="ok",
+            started_at=now + timedelta(minutes=1),
+            finished_at=now + timedelta(minutes=2),
+            summary={"domains": 2, "ok": 2, "failed": 0, "errors": []},
+        )
+    )
+    session.commit()
+    result = evaluate_now(session)
+    assert result["resolved"] == 1
+    session.refresh(event)
+    assert event.resolved_at is not None

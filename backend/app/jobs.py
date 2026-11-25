@@ -146,8 +146,8 @@ async def job_retry_alerts() -> dict:
             .limit(50)
         ).all()
         for event in events:
-            domain = session.get(Domain, event.domain_id)
-            if domain is None:
+            domain = session.get(Domain, event.domain_id) if event.domain_id is not None else None
+            if event.domain_id is not None and domain is None:
                 continue
             results = await _notify(event, domain, settings, resolved=False)
             if results and all(item.ok for item in results):

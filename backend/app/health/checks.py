@@ -7,6 +7,7 @@ HTTP access go through injected clients so tests run entirely on fixtures.
 from __future__ import annotations
 
 import base64
+import ipaddress
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Optional
 
@@ -28,6 +29,7 @@ class CheckContext:
     discovered_selectors: list[tuple[str, str]] = field(default_factory=list)
     reported_policy: dict = field(default_factory=dict)
     http_timeout: float = 6.0
+    helo_hostname: str = ""
 
 
 @dataclass(frozen=True)
@@ -738,16 +740,28 @@ async def check_mx(ctx: CheckContext) -> CheckResult:
 
     details: list[str] = []
     unresolved: list[str] = []
+    ptr_mismatch: list[str] = []
     for priority, host in sorted(hosts):
         answer = await ctx.dns.addresses(host)
         if answer.error:
             details.append(f"{priority} {host}: lookup failed ({answer.error})")
             unresolved.append(host)
-        elif not answer.values:
+            continue
+        if not answer.values:
             details.append(f"{priority} {host}: no A/AAAA record")
             unresolved.append(host)
-        else:
-            details.append(f"{priority} {host} → {', '.join(answer.values[:3])}")
+            continue
+        details.append(f"{priority} {host} → {', '.join(answer.values[:3])}")
+        for address in answer.values[:3]:
+            reverse = await ctx.dns.ptr(address)
+            names = [value.rstrip(".").lower() for value in (reverse.values or [])]
+            if reverse.error:
+                details.append(f"  {address}: PTR lookup failed ({reverse.error})")
+            elif names and host.lower() not in names:
+                details.append(f"  {address}: PTR {', '.join(names[:2])}")
+                ptr_mismatch.append(host)
+            elif not names:
+                details.append(f"  {address}: PTR none")
 
     if unresolved:
         return _result(
@@ -758,6 +772,17 @@ async def check_mx(ctx: CheckContext) -> CheckResult:
             core=True,
             details=details,
             remediation="Fix the MX targets or remove them; senders cannot deliver to a host without an address.",
+        )
+
+    if ptr_mismatch:
+        return _result(
+            "mx",
+            "MX",
+            Status.WARN,
+            "MX host PTR does not confirm its hostname",
+            core=True,
+            details=details,
+            remediation="Give each MX address a PTR matching the MX hostname (forward-confirmed rDNS).",
         )
 
     return _result(
@@ -838,6 +863,38 @@ async def check_mta_sts(ctx: CheckContext) -> CheckResult:
         return _result("mta_sts", "MTA-STS", Status.FAIL, f"Invalid mode {mode!r}", details=details)
     if not mx_hosts:
         return _result("mta_sts", "MTA-STS", Status.FAIL, "Policy has no mx: entries", details=details)
+
+    mx_lookup = await ctx.dns.mx(ctx.domain)
+    live_mx = {
+        value.partition(" ")[2].strip().rstrip(".").lower()
+        for value in (mx_lookup.values or [])
+        if value.partition(" ")[2].strip().rstrip(".") not in {"", "."}
+    }
+    policy_mx = {host.rstrip(".").lower() for host in mx_hosts if host.strip()}
+    if mx_lookup.error:
+        details.append(f"DNS MX lookup failed: {mx_lookup.error}")
+    elif not live_mx:
+        details.append("DNS MX: none")
+    else:
+        details.append("DNS MX: " + ", ".join(sorted(live_mx)[:5]))
+        missing = sorted(policy_mx - live_mx)
+        extra = sorted(live_mx - policy_mx)
+        if missing or extra:
+            evidence["dns_mx"] = sorted(live_mx)
+            parts = []
+            if missing:
+                parts.append("not in DNS MX: " + ", ".join(missing[:3]))
+            if extra:
+                parts.append("missing from policy: " + ", ".join(extra[:3]))
+            return _result(
+                "mta_sts",
+                "MTA-STS",
+                Status.WARN,
+                "Policy MX list does not match DNS MX",
+                details=details + parts,
+                remediation="Make the policy mx: entries exactly match the domain's live MX hostnames.",
+                evidence=evidence,
+            )
 
     try:
         age = int(max_age)
@@ -931,6 +988,115 @@ async def check_dnssec(ctx: CheckContext) -> CheckResult:
     return _result("dnssec", "DNSSEC", Status.PASS, "signed and validated", details=["AD flag set"])
 
 
+# ------------------------------------------------------------------------ CAA
+async def check_caa(ctx: CheckContext) -> CheckResult:
+    lookup = await ctx.dns.caa(ctx.domain)
+    if lookup.error:
+        return _result("caa", "CAA", Status.UNKNOWN, f"DNS lookup failed: {lookup.error}")
+    records = [value.strip() for value in (lookup.values or []) if value.strip()]
+    if not records:
+        return _result(
+            "caa",
+            "CAA",
+            Status.INFO,
+            "Not published",
+            remediation="Optional. A CAA policy restricts which CAs may issue certificates for the domain.",
+        )
+    details = records[:8]
+    issue = [value for value in records if any(tag in value.lower() for tag in (" issue", " issuewild"))]
+    if not issue:
+        return _result(
+            "caa",
+            "CAA",
+            Status.WARN,
+            "CAA has no issue/issuewild policy",
+            details=details,
+            remediation="Add an issue tag for your CA, or an empty issue policy to deny all issuance.",
+        )
+    return _result("caa", "CAA", Status.PASS, f"CAA policy published ({len(issue)} issuer rules)", details=details)
+
+
+# ------------------------------------------------------------------ HELO/EHLO
+async def check_helo(ctx: CheckContext) -> CheckResult:
+    host = (ctx.helo_hostname or "").strip().lower().rstrip(".")
+    if not host:
+        return _result(
+            "helo",
+            "HELO/EHLO DNS",
+            Status.INFO,
+            "Not configured",
+            remediation="Set HELO_HOSTNAME (or the domain setting) to the EHLO/HELO FQDN Stalwart actually sends; this check only validates its DNS.",
+        )
+    if "." not in host or " " in host or host.startswith("-") or host.endswith("-"):
+        return _result(
+            "helo",
+            "HELO/EHLO DNS",
+            Status.FAIL,
+            f"{host!r} is not a valid FQDN",
+            remediation="Use a fully qualified hostname such as mail.example.com.",
+        )
+    try:
+        ipaddress.ip_address(host)
+        return _result(
+            "helo",
+            "HELO/EHLO DNS",
+            Status.FAIL,
+            "HELO/EHLO must be a hostname, not an IP address",
+            remediation="Use a fully qualified hostname such as mail.example.com.",
+        )
+    except ValueError:
+        pass
+
+    answer = await ctx.dns.addresses(host)
+    if answer.error:
+        return _result("helo", "HELO/EHLO DNS", Status.UNKNOWN, f"Forward lookup failed: {answer.error}")
+    addresses = [value for value in (answer.values or []) if value.strip()]
+    if not addresses:
+        return _result(
+            "helo",
+            "HELO/EHLO DNS",
+            Status.FAIL,
+            f"{host} has no A/AAAA record",
+            remediation="Publish forward DNS for the HELO hostname before using it in SMTP.",
+        )
+
+    details = ["forward: " + ", ".join(addresses[:3])]
+    confirmed = 0
+    for address in addresses[:3]:
+        reverse = await ctx.dns.ptr(address)
+        if reverse.error:
+            details.append(f"{address}: PTR lookup failed ({reverse.error})")
+            continue
+        names = [value.rstrip(".").lower() for value in (reverse.values or [])]
+        details.append(f"{address}: PTR {', '.join(names[:2]) if names else 'none'}")
+        if host not in names:
+            continue
+        forward = await ctx.dns.addresses(host)
+        if forward.error:
+            details.append(f"{host}: forward confirmation failed ({forward.error})")
+        elif address in (forward.values or []):
+            confirmed += 1
+
+    if confirmed == len(addresses[:3]):
+        return _result(
+            "helo",
+            "HELO/EHLO DNS",
+            Status.PASS,
+            "DNS preflight: FQDN with forward-confirmed reverse DNS",
+            details=details,
+            evidence={"hostname": host, "addresses": addresses[:3]},
+        )
+    return _result(
+        "helo",
+        "HELO/EHLO DNS",
+        Status.WARN,
+        "DNS preflight: HELO name is not forward-confirmed by every address",
+        details=details,
+        remediation="Point the HELO hostname at your sending IPs and give those IPs matching PTR records.",
+        evidence={"hostname": host, "addresses": addresses[:3]},
+    )
+
+
 # ---------------------------------------------------------------------- BIMI
 async def check_bimi(ctx: CheckContext) -> CheckResult:
     lookup = await ctx.dns.txt(f"default._bimi.{ctx.domain}")
@@ -995,4 +1161,6 @@ CHECKS: tuple[CheckSpec, ...] = (
     CheckSpec("tls_rpt", "TLS-RPT", False, check_tlsrpt),
     CheckSpec("dnssec", "DNSSEC", False, check_dnssec),
     CheckSpec("bimi", "BIMI", False, check_bimi),
+    CheckSpec("caa", "CAA", False, check_caa),
+    CheckSpec("helo", "HELO/EHLO DNS", False, check_helo),
 )

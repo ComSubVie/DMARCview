@@ -592,6 +592,7 @@ async def test_api_run_health(auth_client, session: Session, monkeypatch):
         http=None,
         http_timeout=6.0,
         discovered_selectors=None,
+        helo_hostname="",
     ):
         return HealthReport(
             domain=domain_name,
@@ -660,6 +661,7 @@ def test_settings_roundtrip(auth_client, session: Session):
         json={
             "dkim_selectors": ["mail", "selector1", "mail"],
             "probe_targets": ["mail.aeroclub.example:993"],
+            "helo_hostname": "mail.aeroclub.example",
             "expected_report_hours": 72,
         },
     )
@@ -667,6 +669,7 @@ def test_settings_roundtrip(auth_client, session: Session):
     body = updated.json()
     assert body["dkim_selectors"] == ["mail", "selector1"]
     assert body["probe_targets"] == ["mail.aeroclub.example:993"]
+    assert body["helo_hostname"] == "mail.aeroclub.example"
     assert body["expected_report_hours"] == 72
 
 
@@ -701,3 +704,66 @@ def test_health_requires_auth(client):
     assert client.get("/api/domain-health", params={"domain": "tgm.rocks"}).status_code == 401
     assert client.get("/api/domain-health/fleet").status_code == 401
     assert client.get("/api/storage").status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_mta_sts_policy_mx_must_match_dns_mx():
+    records, fetcher = full_records()
+    records[("tgm.rocks", "MX")] = ["10 mx2.tgm.rocks"]
+    records[("mx2.tgm.rocks", "A")] = ["192.0.2.20"]
+    report = await run_health(
+        "tgm.rocks", selectors=["selector1"], dns=FakeDns(records), http=fetcher
+    )
+    mta = next(result for result in report.results if result.key == "mta_sts")
+    assert mta.status is Status.WARN
+    assert "does not match DNS MX" in mta.summary
+
+
+@pytest.mark.asyncio
+async def test_helo_check_confirms_forward_reverse_dns():
+    records, fetcher = full_records()
+    records[("10.2.0.192.in-addr.arpa", "PTR")] = ["mail.tgm.rocks"]
+    report = await run_health(
+        "tgm.rocks",
+        selectors=["selector1"],
+        dns=FakeDns(records),
+        http=fetcher,
+        helo_hostname="mail.tgm.rocks",
+    )
+    helo = next(result for result in report.results if result.key == "helo")
+    assert helo.status is Status.PASS
+    assert "forward-confirmed" in helo.summary
+
+
+@pytest.mark.asyncio
+async def test_helo_check_warns_when_ptr_does_not_match():
+    records, fetcher = full_records()
+    records[("10.2.0.192.in-addr.arpa", "PTR")] = ["other.tgm.rocks"]
+    report = await run_health(
+        "tgm.rocks",
+        selectors=["selector1"],
+        dns=FakeDns(records),
+        http=fetcher,
+        helo_hostname="mail.tgm.rocks",
+    )
+    helo = next(result for result in report.results if result.key == "helo")
+    assert helo.status is Status.WARN
+
+
+@pytest.mark.asyncio
+async def test_mx_ptr_mismatch_warns_without_failing_resolution():
+    records, fetcher = full_records()
+    records[("10.2.0.192.in-addr.arpa", "PTR")] = ["other.tgm.rocks"]
+    report = await run_health("tgm.rocks", selectors=["selector1"], dns=FakeDns(records), http=fetcher)
+    mx = next(result for result in report.results if result.key == "mx")
+    assert mx.status is Status.WARN
+    assert "PTR" in mx.summary
+
+
+@pytest.mark.asyncio
+async def test_caa_policy_is_reported_as_pass():
+    records, fetcher = full_records()
+    records[("tgm.rocks", "CAA")] = ['0 issue "letsencrypt.org"']
+    report = await run_health("tgm.rocks", selectors=["selector1"], dns=FakeDns(records), http=fetcher)
+    caa = next(result for result in report.results if result.key == "caa")
+    assert caa.status is Status.PASS

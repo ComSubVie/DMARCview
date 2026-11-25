@@ -139,6 +139,7 @@ export const api = {
     payload: {
       dkim_selectors?: string[];
       probe_targets?: string[];
+      helo_hostname?: string | null;
       expected_report_hours?: number;
       dns_checks_enabled?: boolean;
       checks_muted_until?: string | null;

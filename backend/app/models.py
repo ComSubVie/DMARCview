@@ -352,6 +352,7 @@ class DomainSettings(SQLModel, table=True):
         default_factory=lambda: list(DEFAULT_DKIM_SELECTORS), sa_column=Column(JSON)
     )
     probe_targets: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    helo_hostname: Optional[str] = Field(default=None, max_length=255)
     expected_report_hours: int = Field(default=48)
     dns_checks_enabled: bool = Field(default=True)
     checks_muted_until: Optional[datetime] = Field(default=None)
@@ -487,7 +488,7 @@ class AlertEvent(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     rule_id: int = Field(foreign_key="alert_rules.id", index=True)
-    domain_id: int = Field(foreign_key="domains.id", index=True)
+    domain_id: Optional[int] = Field(default=None, foreign_key="domains.id", index=True)
     dedupe_key: str = Field(max_length=160)
     severity: str = Field(default="warning", max_length=16)
     title: str = Field(max_length=255)

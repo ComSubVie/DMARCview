@@ -1,13 +1,13 @@
 # Roadmap
 
-_Rev 23 · 25 November 2026 · sending-IP FCrDNS (v1.14)_
+_Rev 25 · 25 November 2026 · alert coverage, job failures and HELO clarity (v1.15)_
 
 DMARCView began as a self-hosted answer to **“what happened?”** and grew into a complete
 reporting and operations dashboard: **“is my configuration correct?”**, **“tell me when it
 changes”**, **“why did it change?”**, **“what should I do next?”**, and now **“can I prove what
 changed and who changed it?”**.
 
-**Current development release: v1.14.0.** The mandatory roadmap is complete. What remains is
+**Current development release: v1.15.0.** The mandatory roadmap is complete. What remains is
 optional, trigger-based or deliberately parked work.
 
 ## Delivered
@@ -16,8 +16,8 @@ optional, trigger-based or deliberately parked work.
 | --- | --- |
 | **Ingestion** | JMAP polling with incremental cursor and full-mailbox backfill; DMARC RUA from zip/gzip/inline; TLS-RPT; idempotent message/attachment/report dedupe; raw report browser and downloads. |
 | **Analytics** | Compliance, sources, sender identities, ASN/PTR context, period changes, volume anomaly, coverage, reporter quality, TLS delivery, policy advisor and a read-only policy simulator. |
-| **Health** | Live DMARC (including RFC 9989 tree walk/PSD), SPF, DKIM rotation, MX, MTA-STS, TLS-RPT, DNSSEC, BIMI; transport STARTTLS/certificate/DANE probes; snapshot history and DNS diffs. |
-| **Alerts** | Nine rules over reports, snapshots and probes; SMTP or JMAP email submission, Telegram/Signal/webhook; dedupe, cooldown, resolution; per-domain threshold and cooldown overrides; delivery retry with backoff; weekly digest. |
+| **Health** | Live DMARC (including RFC 9989 tree walk/PSD), SPF, DKIM rotation, MX with PTR checks, MTA-STS (including MX-consistency), TLS-RPT, DNSSEC, BIMI, CAA, HELO/EHLO DNS; transport STARTTLS/certificate/DANE probes; snapshot history and DNS diffs. |
+| **Alerts** | Twelve rules over reports, health snapshots, jobs and probes, including health regression, JMAP sync failure and health/probe job failure; SMTP/JMAP email, Telegram/Signal/webhook; dedupe, cooldown, resolution; per-domain overrides; delivery retry; weekly digest. |
 | **Distribution** | Signed read-only share links; CSV/JSON/raw export; sortable fleet comparison; domain tags/groups; saved fleet views. |
 | **Operations** | Scheduler and job history; local SQLite backup and verified restore; retention with raw archiving; known-sender expectations; append-only audit log; PTR/FCrDNS enrichment for sending IPs. |
 | **Signal quality** | Every TLS-RPT policy domain attributed separately; RFC 9990 report warnings; DMARC/SPF/MTA-STS/TLS-RPT change history. |
@@ -25,7 +25,8 @@ optional, trigger-based or deliberately parked work.
 
 ## Recent releases
 
-- **v1.14 — sending-IP FCrDNS.** Cached PTR plus forward confirmation for report source IPs, shown in Sources and exports.
+- **v1.15 — alert coverage and per-domain HELO.** Health-check regression, global JMAP-sync and health/probe-job alerts, domain-specific HELO/EHLO hostnames, and clearer HELO DNS-versus-outbound wording.
+- **v1.14 — network checks.** Sending-IP PTR/FCrDNS, MX PTR confirmation, MTA-STS MX consistency, optional HELO/EHLO DNS readiness and CAA checks.
 - **v1.13 — JMAP email transport.** Alerts and the weekly digest can send through SMTP or
   Stalwart JMAP `EmailSubmission`, using `ALERT_TO`/`DIGEST_TO` and `JMAP_FROM`.
 - **v1.12 — operator visibility.** Editable per-domain alert overrides, dedicated DNS diff view,
@@ -42,8 +43,8 @@ optional, trigger-based or deliberately parked work.
 
 ## Current status
 
-- **Tests:** 120 backend tests, plus the frontend type/build check in CI.
-- **Schema:** Alembic `0001` through `0013`; upgrades run automatically on start.
+- **Tests:** 128 backend tests, plus the frontend type/build check in CI.
+- **Schema:** Alembic `0001` through `0015`; upgrades run automatically on start.
 - **Runtime:** one container, one SQLite database, no Redis/Celery, no telemetry.
 
 Known limits:

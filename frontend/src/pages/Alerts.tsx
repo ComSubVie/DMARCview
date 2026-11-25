@@ -411,10 +411,19 @@ export function AlertsPage() {
                 {data.rules.map((rule) => (
                   <tr key={rule.id}>
                     <td>
-                      <div className="primary-cell">{rule.label}</div>
+                      <div className="primary-cell">
+                        {rule.label}
+                        {rule.scope === "global" ? (
+                          <span className="chip" style={{ marginLeft: 7 }}>
+                            global
+                          </span>
+                        ) : null}
+                      </div>
                       <div className="tiny muted rule-description">{rule.description}</div>
                     </td>
-                    <td className="hide-sm tiny muted">{conditionSummary(rule, kinds.get(rule.kind))}</td>
+                    <td className="hide-sm tiny muted">
+                      {rule.scope === "global" ? "all domains" : conditionSummary(rule, kinds.get(rule.kind))}
+                    </td>
                     <td className="center hide-sm">
                       {rule.open > 0 ? <Badge tone="bad">{rule.open}</Badge> : "—"}
                     </td>

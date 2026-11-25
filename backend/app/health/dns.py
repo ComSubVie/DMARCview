@@ -41,6 +41,9 @@ class BaseDnsClient:
     async def ds(self, name: str) -> Lookup:
         return await self.lookup(name, "DS")
 
+    async def caa(self, name: str) -> Lookup:
+        return await self.lookup(name, "CAA")
+
     async def addresses(self, name: str) -> Lookup:
         answer = await self.lookup(name, "A")
         if answer.values or answer.error:

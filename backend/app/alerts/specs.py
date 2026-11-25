@@ -39,6 +39,7 @@ class RuleSpec:
     description: str
     severity: str
     fields: tuple[FieldSpec, ...]
+    scope: Literal["domain", "global"] = "domain"
 
     def defaults(self) -> dict[str, Any]:
         return {field.key: field.default for field in self.fields}
@@ -63,6 +64,7 @@ class RuleSpec:
             "label": self.label,
             "description": self.description,
             "severity": self.severity,
+            "scope": self.scope,
             "fields": [field.as_dict() for field in self.fields],
         }
 
@@ -156,6 +158,33 @@ SPECS: dict[str, RuleSpec] = {
             description="A probe target that should speak TLS is failing to negotiate it.",
             severity="critical",
             fields=(),
+        ),
+        RuleSpec(
+            kind="health_regression",
+            label="Health check regression",
+            description="A live DNS/HTTP/transport check moved from healthy to warning or failure.",
+            severity="warning",
+            fields=(),
+        ),
+        RuleSpec(
+            kind="sync_failure",
+            label="JMAP sync failing",
+            description="Consecutive scheduled report syncs are failing; new reports may be missed.",
+            severity="critical",
+            fields=(
+                FieldSpec("failures", "Consecutive failures", "int", 2, 1, 10, ""),
+            ),
+            scope="global",
+        ),
+        RuleSpec(
+            kind="job_failure",
+            label="Health/probe job failing",
+            description="Scheduled health or transport-probe runs are raising per-domain errors.",
+            severity="critical",
+            fields=(
+                FieldSpec("failures", "Consecutive failures", "int", 1, 1, 10, ""),
+            ),
+            scope="global",
         ),
     )
 }

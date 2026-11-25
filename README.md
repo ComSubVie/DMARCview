@@ -44,7 +44,8 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
   TLS-RPT reports, failure reasons
   (`certificate-expired`, `starttls-not-supported`, …) and the reporters behind them.
 - **Checks your configuration, not just your reports.** Live DNS checks for DMARC, SPF (with the
-  10-lookup limit), DKIM selectors, MX, MTA-STS (policy-id validation), TLS-RPT, DNSSEC and BIMI.
+  10-lookup limit), DKIM selectors, MX with PTR confirmation, MTA-STS (policy-id and MX
+  consistency), TLS-RPT, DNSSEC, BIMI, CAA and optional HELO/EHLO DNS.
   DMARC policy discovery follows RFC 9989: if a domain has no record, parent/PSD records are
   found by tree walk, with `sp=`, `np=`, `t=` and `psd=` applied, external `rua=`/`ruf=`
   destinations verified, and a readiness panel for the current record. Because outbound port
@@ -52,10 +53,11 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
   certificate chain, hostname, expiry and DANE/TLSA.
 - **Keeps the routine quiet.** Mark known ESP networks, ASNs or sending domains so first-seen
   alerts stay meaningful, then silence or retune a rule for one domain without changing the
-  global policy. A weekly SMTP digest covers domains you do not open every day.
-- **Tells you when it changes.** Nine alert rules cover compliance drops, new senders, DKIM
-  breaks, TLS failures, silent report gaps, volume spikes, policy drift and certificate expiry,
-  delivered over SMTP or JMAP email submission, Telegram, Signal (signal-cli) or a signed webhook.
+  global policy. A weekly email digest — SMTP or JMAP — covers domains you do not open every day.
+- **Tells you when it changes.** Twelve alert rules cover compliance drops, new senders, DKIM
+  breaks, TLS failures, silent report gaps, volume spikes, policy drift, certificate expiry,
+  health-check regressions and failing JMAP syncs, delivered over SMTP or JMAP email submission,
+  Telegram, Signal (signal-cli) or a signed webhook.
 - **Runs itself.** An in-process scheduler re-checks every few hours, evaluates alerts,
   reverse-resolves sending IPs, and reports every run in the UI. No cron, Redis or Celery.
 - **Multi-domain.** A fleet view plus a per-domain drill-down with a domain picker; free-form
@@ -275,6 +277,7 @@ All settings are environment variables (`.env` is loaded automatically).
 | `PROBE_TIMEOUT_SECONDS` | `8` | Per-target connect/handshake timeout. |
 | `HTTP_TIMEOUT_SECONDS` | `6` | Timeout for MTA-STS and BIMI fetches. |
 | `PTR_ENRICHMENT_ENABLED` | `true` | Reverse-resolve sending IPs and forward-confirm their PTR names. |
+| `HELO_HOSTNAME` | — | Expected outbound EHLO/HELO FQDN for the DNS readiness check; does not configure Stalwart. A domain setting can override it. |
 | `JOBS_INITIAL_DELAY_SECONDS` | `25` | Delay before the first scheduled run after boot. |
 | `BACKUP_KEEP` | `14` | Local snapshots retained by `app.cli backup`. |
 | `RETENTION_DAYS` | `0` | Archive raw payloads and prune reports older than this. `0` keeps forever. |
@@ -479,7 +482,7 @@ MFA and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (120 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (128 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -503,11 +506,13 @@ The **Domain health** card is computed from live DNS, not from report contents:
 | DMARC | record present and valid, `p`/`sp`/`pct`, `rua`; flags drift against the policy receivers report |
 | SPF | recursive includes, **≤10 DNS lookups**, ≤2 void lookups, terminal `all` |
 | DKIM | a key for every configured **and report-discovered** selector, key type/size; date-based rotation selectors are expanded around today |
-| MX | hosts resolve; null MX is understood |
-| MTA-STS | `_mta-sts` TXT with an id, policy fetched over HTTPS, mode/mx/max_age |
+| MX | hosts resolve; PTR names checked against each address; null MX is understood |
+| MTA-STS | `_mta-sts` TXT with an id, policy fetched over HTTPS, mode/mx/max_age, policy MX matches DNS MX |
 | TLS-RPT | `_smtp._tls` TXT and `rua` |
 | DNSSEC | DS present and validated (AD flag from the resolver) |
 | BIMI | `default._bimi`, logo reachable — presence only, no VMC verification |
+| CAA | optional CAA policy with `issue`/`issuewild` rules |
+| HELO/EHLO DNS | optional expected `HELO_HOSTNAME` FQDN, forward DNS and forward-confirmed PTR |
 
 Selectors cannot be enumerated through DNS, and Stalwart rotates them on a date template
 (`v1-ed25519-20260101`). DMARCView learns the real ones from the `auth_results/dkim/selector`
@@ -521,13 +526,32 @@ expiry, TLS version/cipher, and DANE/TLSA matching. No authentication is attempt
 message is ever sent. If a network blocks outbound port 25 the probe is reported as a
 failure with the connection error — DNS checks are unaffected.
 
+### Testing outbound HELO/EHLO
+
+The **HELO/EHLO DNS** check is a preflight, not proof of what Stalwart sends. It verifies that
+the configured expected hostname has forward DNS, PTR records and forward confirmation.
+`HELO_HOSTNAME` and the per-domain field only tell the check what to expect; they do not
+change Stalwart.
+
+To observe the real outbound name, send a test message through Stalwart to an external mailbox
+and inspect the first `Received:` header:
+
+```text
+Received: from mail.example.net (mail.example.net [203.0.113.10])
+```
+
+Alternatively, point a test route at a controlled SMTP sink (`aiosmtpd`, `smtp-sink` or
+`smtp4dev`) and read its `EHLO` line. Sending to a local mailbox does not exercise outbound
+SMTP, and connecting a client to Stalwart's submission port shows that client's EHLO, not
+Stalwart's. If Stalwart relays through a smarthost, inspect the smarthost's outbound session.
+
 Checks are cached in `domain_health_snapshots` (drift history) and `transport_probes`; the
 scheduler runs them every six hours and `Re-check now` forces a run. Results degrade to
 *unknown*, never *fail*, when DNS or the network is unavailable.
 
 ## Alerts
 
-The **Alerts** page evaluates nine rules over the reports, health snapshots and probes:
+The **Alerts** page evaluates twelve rules over the reports, health snapshots and probes:
 
 | Rule | Fires when |
 | --- | --- |
@@ -540,10 +564,14 @@ The **Alerts** page evaluates nine rules over the reports, health snapshots and 
 | Policy drift | DNS DMARC policy differs from what receivers report |
 | Certificate expiring | a probed certificate is inside the warning window (21 d) |
 | STARTTLS broken | a probe target fails to negotiate TLS (certificate failures go to the rule above) |
+| Health check regression | a check moves from healthy to warning/failure between snapshots |
+| JMAP sync failing | two consecutive scheduled JMAP syncs fail or finish partially (global rule) |
+| Health/probe job failing | a scheduled health-check or transport-probe run reports per-domain errors (global rule) |
 
 Evaluation runs hourly and on demand. Incidents are deduplicated while open, repeated
 episodes are suppressed by a cooldown, and a resolution notice is sent when the condition
-clears. Thresholds, enablement and cooldown are editable per rule in the UI.
+clears. Thresholds, enablement and cooldown are editable per rule in the UI. The JMAP sync rule
+is global; the other rules can be overridden per domain.
 
 Delivery channels are configured with environment variables only — credentials never enter
 SQLite or backups:

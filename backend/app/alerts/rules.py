@@ -11,12 +11,15 @@ from sqlalchemy import case, func, or_
 from sqlmodel import Session, select
 
 from ..analytics import volume_anomaly
+from ..config import get_settings
 from ..expectations import matching_label
 from ..health.service import latest_probes
 from ..models import (
     Domain,
     DomainHealthSnapshot,
     DomainSettings,
+    IngestRun,
+    JobRun,
     Report,
     SourceRecord,
     TlsPolicy,
@@ -337,6 +340,150 @@ def policy_drift(session: Session, domain: Domain, cond: dict, now: datetime) ->
     ]
 
 
+STATUS_RANK = {"info": 0, "n/a": 0, "pass": 1, "unknown": 2, "warn": 3, "fail": 4}
+
+
+def health_regression(session: Session, domain: Domain, cond: dict, now: datetime) -> list[Finding]:
+    snapshots = session.exec(
+        select(DomainHealthSnapshot)
+        .where(DomainHealthSnapshot.domain_id == domain.id)
+        .order_by(DomainHealthSnapshot.checked_at.desc())
+        .limit(2)
+    ).all()
+    if len(snapshots) < 2:
+        return []
+    latest, previous = snapshots[0], snapshots[1]
+    before = {item.get("key"): item for item in (previous.results or []) if item.get("key")}
+    findings: list[Finding] = []
+    for item in latest.results or []:
+        key = item.get("key")
+        status = str(item.get("status") or "").lower()
+        if not key or status not in {"warn", "fail"}:
+            continue
+        prior = before.get(key)
+        if prior is None:
+            continue
+        prior_status = str(prior.get("status") or "").lower()
+        if STATUS_RANK.get(status, 0) <= STATUS_RANK.get(prior_status, 0):
+            continue
+        label = item.get("label") or key
+        findings.append(
+            Finding(
+                key=f"health:{key}",
+                severity="critical" if status == "fail" else "warning",
+                title=f"{label} regressed to {status.upper()}",
+                message=(
+                    f"{label}: {item.get('summary') or status} (previous check: "
+                    f"{prior.get('summary') or prior_status})."
+                ),
+                payload={
+                    "check": key,
+                    "previous": prior_status,
+                    "current": status,
+                    "summary": item.get("summary"),
+                },
+            )
+        )
+    return findings
+
+
+def sync_failure(session: Session, domain: Domain | None, cond: dict, now: datetime) -> list[Finding]:
+    settings = get_settings()
+    if not settings.jmap_enabled:
+        return []
+    runs = session.exec(
+        select(IngestRun)
+        .where(IngestRun.source == "jmap")
+        .order_by(IngestRun.started_at.desc())
+        .limit(20)
+    ).all()
+    if not runs:
+        return []
+    failures = 0
+    for run in runs:
+        status = (run.status or "").lower()
+        if status == "ok":
+            break
+        if status in {"error", "partial"}:
+            failures += 1
+        elif status == "running":
+            continue
+        else:
+            break
+    if failures < int(cond.get("failures", 2)):
+        return []
+    latest = next((run for run in runs if (run.status or "").lower() in {"error", "partial"}), runs[0])
+    error = (latest.error or "no error detail").strip()
+    return [
+        Finding(
+            key="sync",
+            severity="critical" if (latest.status or "").lower() == "error" else "warning",
+            title=f"JMAP sync failed {failures} times in a row",
+            message=(
+                f"The last {failures} scheduled JMAP syncs did not complete successfully. "
+                f"Latest error: {error[:300]}"
+            ),
+            payload={
+                "failures": failures,
+                "last_error": error[:1000],
+                "started_at": latest.started_at.isoformat() if latest.started_at else None,
+            },
+        )
+    ]
+
+
+def job_failure(session: Session, domain: Domain | None, cond: dict, now: datetime) -> list[Finding]:
+    findings: list[Finding] = []
+    threshold = int(cond.get("failures", 1))
+    for name, label in (("health_checks", "Health checks"), ("transport_probes", "Transport probes")):
+        runs = session.exec(
+            select(JobRun)
+            .where(JobRun.name == name)
+            .order_by(JobRun.started_at.desc())
+            .limit(20)
+        ).all()
+        if not runs:
+            continue
+        failures = 0
+        for run in runs:
+            summary = run.summary or {}
+            errors = summary.get("errors") or []
+            failed = (run.status or "").lower() == "error" or bool(errors)
+            if failed:
+                failures += 1
+            elif (run.status or "").lower() == "running":
+                continue
+            else:
+                break
+        if failures < threshold:
+            continue
+        latest = next(
+            (
+                run
+                for run in runs
+                if (run.status or "").lower() == "error" or bool((run.summary or {}).get("errors"))
+            ),
+            runs[0],
+        )
+        summary = latest.summary or {}
+        error = (latest.error or "; ".join(summary.get("errors") or []) or "no error detail").strip()
+        findings.append(
+            Finding(
+                key=f"job:{name}",
+                severity="critical",
+                title=f"{label} failed {failures} times in a row",
+                message=f"The last {failures} scheduled {label.lower()} runs reported errors. {error[:300]}",
+                payload={
+                    "job": name,
+                    "failures": failures,
+                    "last_error": error[:1000],
+                    "started_at": latest.started_at.isoformat() if latest.started_at else None,
+                },
+            )
+        )
+    return findings
+
+
 def cert_expiry(session: Session, domain: Domain, cond: dict, now: datetime) -> list[Finding]:
     warn_days = int(cond["warn_days"])
     findings: list[Finding] = []
@@ -388,6 +535,9 @@ EVALUATORS: dict[str, Callable[[Session, Domain, dict, datetime], list[Finding]]
     "policy_drift": policy_drift,
     "cert_expiry": cert_expiry,
     "starttls_broken": starttls_broken,
+    "health_regression": health_regression,
+    "sync_failure": sync_failure,
+    "job_failure": job_failure,
 }
 
 

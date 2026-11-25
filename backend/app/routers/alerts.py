@@ -75,7 +75,11 @@ def update_rule(
 @router.get("/overrides/{domain_name}")
 def list_overrides(domain_name: str, session: Session = Depends(get_session)) -> dict:
     domain = _domain(session, domain_name)
-    rules = session.exec(select(AlertRule)).all()
+    rules = [
+        rule
+        for rule in session.exec(select(AlertRule)).all()
+        if (SPECS.get(rule.kind) is None or SPECS[rule.kind].scope == "domain")
+    ]
     overrides = {
         row.rule_id: row
         for row in session.exec(
@@ -125,6 +129,8 @@ def update_override(
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found")
     spec = SPECS.get(kind)
+    if spec is not None and spec.scope == "global":
+        raise HTTPException(status_code=400, detail="Global rules cannot be overridden per domain")
     override = session.exec(
         select(AlertRuleOverride).where(
             AlertRuleOverride.rule_id == rule.id,
@@ -167,6 +173,9 @@ def delete_override(
     rule = session.exec(select(AlertRule).where(AlertRule.kind == kind)).first()
     if rule is None:
         raise HTTPException(status_code=404, detail="Rule not found")
+    spec = SPECS.get(kind)
+    if spec is not None and spec.scope == "global":
+        raise HTTPException(status_code=400, detail="Global rules cannot be overridden per domain")
     override = session.exec(
         select(AlertRuleOverride).where(
             AlertRuleOverride.rule_id == rule.id,

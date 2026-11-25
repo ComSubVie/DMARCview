@@ -46,9 +46,9 @@ def ensure_rules(session: Session) -> None:
         session.commit()
 
 
-def _subject(event: AlertEvent, domain: Domain, resolved: bool) -> str:
+def _subject(event: AlertEvent, domain_name: str, resolved: bool) -> str:
     prefix = "Resolved" if resolved else event.severity.upper()
-    return f"[DMARCView] {prefix} {domain.name}: {event.title}"
+    return f"[DMARCView] {prefix} {domain_name}: {event.title}"
 
 
 def _body(event: AlertEvent, settings) -> str:
@@ -58,16 +58,19 @@ def _body(event: AlertEvent, settings) -> str:
     return body
 
 
-async def _notify(event: AlertEvent, domain: Domain, settings, *, resolved: bool) -> list[channels.ChannelResult]:
+async def _notify(
+    event: AlertEvent, domain: Optional[Domain], settings, *, resolved: bool
+) -> list[channels.ChannelResult]:
+    domain_name = domain.name if domain is not None else "All domains"
     payload = {
         "event_id": event.id,
-        "domain": domain.name,
+        "domain": domain_name,
         "severity": event.severity,
         "title": event.title,
         "message": event.message,
         "resolved": resolved,
     }
-    subject = _subject(event, domain, resolved)
+    subject = _subject(event, domain_name, resolved)
     body = _body(event, settings)
     results = await channels.deliver(settings, subject, body, payload)
     if resolved:
@@ -111,15 +114,19 @@ async def evaluate(
     }
 
     for rule in rules:
-        if rule.kind not in SPECS:
+        spec = SPECS.get(rule.kind)
+        if spec is None:
             continue
-        for domain in domains:
-            override = session.exec(
-                select(AlertRuleOverride).where(
-                    AlertRuleOverride.rule_id == rule.id,
-                    AlertRuleOverride.domain_id == domain.id,
-                )
-            ).first()
+        targets: list[Optional[Domain]] = [None] if spec.scope == "global" else list(domains)
+        for domain in targets:
+            override = None
+            if domain is not None:
+                override = session.exec(
+                    select(AlertRuleOverride).where(
+                        AlertRuleOverride.rule_id == rule.id,
+                        AlertRuleOverride.domain_id == domain.id,
+                    )
+                ).first()
             condition = dict(rule.condition or {})
             cooldown = rule.cooldown_minutes
             if override is not None:
@@ -136,10 +143,15 @@ async def evaluate(
                     now,
                 )
             )
+            domain_clause = (
+                AlertEvent.domain_id.is_(None)
+                if domain is None
+                else AlertEvent.domain_id == domain.id
+            )
             open_events = session.exec(
                 select(AlertEvent).where(
                     AlertEvent.rule_id == rule.id,
-                    AlertEvent.domain_id == domain.id,
+                    domain_clause,
                     AlertEvent.resolved_at.is_(None),
                 )
             ).all()
@@ -161,7 +173,7 @@ async def evaluate(
                     select(AlertEvent)
                     .where(
                         AlertEvent.rule_id == rule.id,
-                        AlertEvent.domain_id == domain.id,
+                        domain_clause,
                         AlertEvent.dedupe_key == finding.key,
                     )
                     .order_by(AlertEvent.triggered_at.desc())
@@ -174,7 +186,7 @@ async def evaluate(
 
                 event = AlertEvent(
                     rule_id=rule.id,
-                    domain_id=domain.id,
+                    domain_id=domain.id if domain is not None else None,
                     dedupe_key=finding.key[:160],
                     severity=finding.severity,
                     title=finding.title[:255],
@@ -191,7 +203,9 @@ async def evaluate(
                         summary["notified"] += 1
                         summary["delivered"] += sum(1 for result in results if result.ok)
                         summary["failed"] += sum(1 for result in results if not result.ok)
-                summary["events"].append(serialize_event(event, domain.name, rule.kind))
+                summary["events"].append(
+                    serialize_event(event, domain.name if domain else "All domains", rule.kind)
+                )
 
             for key, event in by_key.items():
                 if key in current_keys:
@@ -221,14 +235,14 @@ async def retry_event(session: Session, event_id: int) -> dict[str, Any]:
     event = session.get(AlertEvent, event_id)
     if event is None:
         raise ValueError("Alert event not found")
-    domain = session.get(Domain, event.domain_id)
-    if domain is None:
+    domain = session.get(Domain, event.domain_id) if event.domain_id is not None else None
+    if event.domain_id is not None and domain is None:
         raise ValueError("Domain not found")
     results = await _notify(event, domain, settings, resolved=False)
     session.add(event)
     session.commit()
     return {
-        "event": serialize_event(event, domain.name, ""),
+        "event": serialize_event(event, domain.name if domain else "All domains", ""),
         "delivered": bool(results) and all(item.ok for item in results),
         "results": [item.as_dict() for item in results],
     }
@@ -301,6 +315,7 @@ def payload(session: Session) -> dict[str, Any]:
                 "enabled": rule.enabled,
                 "condition": spec.clean(rule.condition) if spec else rule.condition,
                 "cooldown_minutes": rule.cooldown_minutes,
+                "scope": spec.scope if spec else "domain",
                 "open": open_count,
                 "last_triggered_at": _iso(last.triggered_at) if last else None,
             }
@@ -311,7 +326,7 @@ def payload(session: Session) -> dict[str, Any]:
     ).all()
     kinds = {rule.id: rule.kind for rule in rules}
     event_payload = [
-        serialize_event(event, domains.get(event.domain_id, "?"), kinds.get(event.rule_id, "?"))
+        serialize_event(event, domains.get(event.domain_id, "All domains"), kinds.get(event.rule_id, "?"))
         for event in events
     ]
     state = session.get(SyncState, LAST_RUN_KEY)
