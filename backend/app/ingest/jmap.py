@@ -197,7 +197,10 @@ class JMAPClient:
             name, args, tag = entry[0], entry[1], entry[2]
             if name == "error":
                 raise JMAPError(f"JMAP method error: {args.get('type')} {args.get('description', '')}".strip(), payload=args)
-            mapped[tag] = args
+            # EmailSubmission/set can emit an implicit Email/set response with
+            # the same method-call id. Keep the first (main) response so the
+            # submission result is not overwritten by the implicit update.
+            mapped.setdefault(tag, args)
         return mapped
 
     # ------------------------------------------------------------- mailbox

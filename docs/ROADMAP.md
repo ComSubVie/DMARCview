@@ -1,13 +1,13 @@
 # Roadmap
 
-_Rev 21 · 24 November 2026 · JMAP EmailSubmission fix (v1.13.2)_
+_Rev 22 · 25 November 2026 · JMAP submission response fix (v1.13.3)_
 
 DMARCView began as a self-hosted answer to **“what happened?”** and grew into a complete
 reporting and operations dashboard: **“is my configuration correct?”**, **“tell me when it
 changes”**, **“why did it change?”**, **“what should I do next?”**, and now **“can I prove what
 changed and who changed it?”**.
 
-**Current development release: v1.13.2.** The mandatory roadmap is complete. What remains is
+**Current development release: v1.13.3.** The mandatory roadmap is complete. What remains is
 optional, trigger-based or deliberately parked work.
 
 ## Delivered

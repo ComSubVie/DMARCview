@@ -114,6 +114,12 @@ class MockServer:
                         responses.append(
                             ["EmailSubmission/set", {"accountId": "acc1", "created": {"submission": {"id": "sub-1"}}}, tag]
                         )
+                        # RFC 8621: onSuccessUpdateEmail causes an implicit
+                        # Email/set response with the same method-call id.
+                        if "onSuccessUpdateEmail" in args:
+                            responses.append(
+                                ["Email/set", {"accountId": "acc1", "updated": {"draft-1": None}}, tag]
+                            )
                 elif name == "Email/get":
                     responses.append(
                         [
