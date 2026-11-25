@@ -238,7 +238,7 @@ def cmd_restore(args: argparse.Namespace) -> int:
         print("refusing to restore without --yes (stop the app first)", file=sys.stderr)
         return 1
     try:
-        safety = restore_database(Path(args.snapshot))
+        safety = restore_database(Path(args.snapshot), with_archive=args.with_archive)
     except BackupError as exc:
         print(f"restore failed: {exc}", file=sys.stderr)
         return 1
@@ -448,9 +448,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("migrate", help="apply database migrations")
     p.set_defaults(func=cmd_migrate)
 
-    p = sub.add_parser("restore", help="restore a SQLite snapshot (requires --yes)")
-    p.add_argument("snapshot", help="path to a dmarc-*.db snapshot")
+    p = sub.add_parser("restore", help="restore a snapshot or bundle (requires --yes)")
+    p.add_argument("snapshot", help="path to a dmarc-*.db or dmarc-*.tar.gz")
     p.add_argument("--yes", action="store_true", help="confirm the restore")
+    p.add_argument("--with-archive", action="store_true", help="also extract archive/ from a bundle")
     p.set_defaults(func=cmd_restore)
 
     p = sub.add_parser("backup", help="write a consistent SQLite backup")

@@ -175,6 +175,11 @@ export const api = {
     }),
 
   storage: () => request<import("./types").StorageInfo>("/storage"),
+  runBackup: () =>
+    request<{ ok: boolean; providers: string[]; bytes: number; sha256: string }>(
+      "/backup/run",
+      { method: "POST" },
+    ),
   jobs: () => request<import("./types").JobsResponse>("/jobs"),
 
   shareLinks: () =>

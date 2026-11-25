@@ -54,7 +54,7 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
 - **Keeps the routine quiet.** Mark known ESP networks, ASNs or sending domains so first-seen
   alerts stay meaningful, then silence or retune a rule for one domain without changing the
   global policy. A weekly email digest — SMTP or JMAP — covers domains you do not open every day.
-- **Tells you when it changes.** Twelve alert rules cover compliance drops, new senders, DKIM
+- **Tells you when it changes.** Thirteen alert rules cover compliance drops, new senders, DKIM
   breaks, TLS failures, silent report gaps, volume spikes, policy drift, certificate expiry,
   health-check regressions and failing JMAP syncs, delivered over SMTP or JMAP email submission,
   Telegram, Signal (signal-cli) or a signed webhook.
@@ -484,8 +484,9 @@ DNS change history. v1.12 completed operator visibility: editable alert override
 history, report-quality scores, delivery diagnostics/digest controls and an audit log. v1.13
 added JMAP email submission; v1.14 added network checks (sending-IP FCrDNS, MX PTR, MTA-STS MX
 consistency, HELO/EHLO DNS and CAA); v1.15 added regression/job alerts and per-domain HELO;
-v1.16 adds scheduled WebDAV/S3 off-box backups. No mandatory roadmap work remains; MFA and
-RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
+v1.16 adds scheduled WebDAV/S3 off-box backups; v1.17 adds backup checksum verification, stale
+alerts, manual backup, audit events and archive restore. No mandatory roadmap work remains; MFA
+and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
 
@@ -493,7 +494,7 @@ RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (133 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (135 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -562,7 +563,7 @@ scheduler runs them every six hours and `Re-check now` forces a run. Results deg
 
 ## Alerts
 
-The **Alerts** page evaluates twelve rules over the reports, health snapshots and probes:
+The **Alerts** page evaluates thirteen rules over the reports, health snapshots and probes:
 
 | Rule | Fires when |
 | --- | --- |
@@ -578,6 +579,7 @@ The **Alerts** page evaluates twelve rules over the reports, health snapshots an
 | Health check regression | a check moves from healthy to warning/failure between snapshots |
 | JMAP sync failing | two consecutive scheduled JMAP syncs fail or finish partially (global rule) |
 | Scheduled job failing | a scheduled health-check, probe or backup run reports errors (global rule) |
+| Off-box backup stale | no successful off-box backup within the configured maximum age (global rule) |
 
 Evaluation runs hourly and on demand. Incidents are deduplicated while open, repeated
 episodes are suppressed by a cooldown, and a resolution notice is sent when the condition
@@ -677,9 +679,13 @@ python -m app.cli backup --offsite          # local snapshot + upload
 python -m app.cli backup --bundle           # keep a local .tar.gz bundle
 ```
 
-The bundle contains the SQLite snapshot and the archive directory. Remote retention is left
-to the WebDAV/S3 provider (for example, an S3 lifecycle rule); the app only rotates local
-`BACKUP_KEEP` snapshots.
+Use **Back up now** in Ingestion → Storage for the same operation from the UI. Manual and
+scheduled runs are recorded in the audit log as `backup.run`, `backup.local` or
+`backup.failed`.
+
+The bundle contains the SQLite snapshot and the archive directory. The app writes a
+`.sha256` sidecar next to each bundle and verifies the remote size/checksum after upload.
+Remote retention is left to the provider; the app only rotates local `BACKUP_KEEP` snapshots.
 
 Restore from either a local snapshot or a downloaded bundle:
 
@@ -689,8 +695,57 @@ python -m app.cli restore dmarc-YYYYMMDD-HHMMSS.tar.gz --yes
 ```
 
 Restore verifies the snapshot before replacing the live database and takes a safety snapshot
-of the current database first. For a bundle, only the database is restored from the archive;
-extract `archive/` separately if you also need the raw reports.
+of the current database first. Add `--with-archive` to also extract `archive/` from a bundle:
+
+```bash
+python -m app.cli restore dmarc-YYYYMMDD-HHMMSS.tar.gz --with-archive --yes
+```
+
+### Remote retention examples
+
+S3-compatible storage can use a lifecycle rule (for example, keep 30 days):
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "dmarcview-backups-30-days",
+      "Status": "Enabled",
+      "Filter": {"Prefix": "dmarcview/"},
+      "Expiration": {"Days": 30}
+    }
+  ]
+}
+```
+
+Apply it with the AWS CLI or your provider’s console:
+
+```bash
+aws s3api put-bucket-lifecycle-configuration   --bucket dmarcview-backups   --lifecycle-configuration file://lifecycle.json
+```
+
+MinIO’s `mc` equivalent is:
+
+```bash
+mc ilm add --expiry-days 30 myminio/dmarcview-backups
+```
+
+For WebDAV, create a scheduled cleanup on the server or NAS (for example, delete
+`dmarc-*.tar.gz` and matching `.sha256` files older than 30 days). The application does not
+delete remote objects.
+
+### Restore drill
+
+1. Download the latest `dmarc-*.tar.gz` and its `.sha256` from the remote target.
+2. Verify the checksum locally with `sha256sum -c` (the sidecar uses the standard
+   `<hash>  <filename>` format).
+3. Stop the web container.
+4. Run `python -m app.cli restore <bundle> --with-archive --yes`.
+5. Start the container and confirm the version, Reports count and a sample report opening.
+6. Run `python -m app.cli backup --offsite` once to confirm uploads still work after the
+   restore.
+
+Keep the safety snapshot printed by the restore command until the drill is complete.
 
 Retention is **off by default** (`RETENTION_DAYS=0`). When set, a daily scheduler job archives
 each old report's original XML/JSON to `data/archive/YYYY/MM/` and then deletes the report and

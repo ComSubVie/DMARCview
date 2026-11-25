@@ -42,6 +42,7 @@ export function IngestPage() {
   const [uploadResult, setUploadResult] = useState<string | null>(null);
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [jobs, setJobs] = useState<JobsResponse | null>(null);
+  const [backingUp, setBackingUp] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -80,6 +81,23 @@ export function IngestPage() {
     }, 2500);
     return () => window.clearInterval(timer);
   }, [status?.state.running]);
+
+  async function runBackup() {
+    setBackingUp(true);
+    try {
+      const result = await api.runBackup();
+      toast(
+        result.providers.length > 0
+          ? `Backup uploaded via ${result.providers.join(" + ")}`
+          : "Local backup written",
+      );
+      await loadAux();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Backup failed", "error");
+    } finally {
+      setBackingUp(false);
+    }
+  }
 
   async function handleSync() {
     setBusy("sync");
@@ -294,7 +312,37 @@ export function IngestPage() {
               <h2 className="card-title">Storage</h2>
               <p className="card-sub">One SQLite file plus the raw report archive</p>
             </div>
-            <Badge tone="neutral">{storage ? formatBytes(storage.total_bytes) : "—"}</Badge>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {storage?.offsite.enabled ? (
+                <Badge
+                  tone={
+                    storage.offsite.last_error
+                      ? "bad"
+                      : storage.offsite.last_at
+                        ? "good"
+                        : "warn"
+                  }
+                >
+                  {storage.offsite.last_error
+                    ? "backup error"
+                    : storage.offsite.last_at
+                      ? `backup ${relativeTime(storage.offsite.last_at)}`
+                      : "backup pending"}
+                </Badge>
+              ) : null}
+              {storage && (storage.offsite.enabled || storage.offsite.providers.length > 0) ? (
+                <button
+                  className="btn ghost sm"
+                  type="button"
+                  onClick={() => void runBackup()}
+                  disabled={backingUp}
+                >
+                  {backingUp ? <span className="spinner" /> : <RefreshCw size={13} />}
+                  Back up now
+                </button>
+              ) : null}
+              <Badge tone="neutral">{storage ? formatBytes(storage.total_bytes) : "—"}</Badge>
+            </div>
           </div>
           <div className="card-body">
             {!storage ? (

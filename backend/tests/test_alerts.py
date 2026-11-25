@@ -25,6 +25,7 @@ from app.models import (
     JobRun,
     Report,
     SourceRecord,
+    SyncState,
     TransportProbe,
 )
 
@@ -314,7 +315,7 @@ def test_api_rules_and_manual_run(auth_client, session: Session):
     add_record(session, report, domain, ip="192.0.2.1", count=100, dkim_pass=False, spf_pass=False)
 
     listing = auth_client.get("/api/alerts").json()
-    assert len(listing["rules"]) == len(listing["kinds"]) == 12
+    assert len(listing["rules"]) == len(listing["kinds"]) == 13
     assert {channel["kind"] for channel in listing["channels"]} == {
         "smtp",
         "jmap",
@@ -507,3 +508,39 @@ def test_job_failure_alert_is_global_and_resolves(session: Session):
     assert result["resolved"] == 1
     session.refresh(event)
     assert event.resolved_at is not None
+
+
+def test_backup_stale_alert_is_global_and_resolves(session: Session, monkeypatch):
+    from dataclasses import replace
+    from app.config import get_settings
+
+    monkeypatch.setattr(
+        "app.alerts.rules.get_settings",
+        lambda: replace(
+            get_settings(),
+            backup_enabled=True,
+            backup_webdav_url="https://dav.example/backups",
+        ),
+    )
+    only_rule(session, "backup_stale")
+    now = datetime.now(timezone.utc)
+    session.add(
+        SyncState(
+            key="backup.last_offsite_at",
+            value=(now - timedelta(hours=72)).replace(microsecond=0).isoformat(),
+        )
+    )
+    session.commit()
+
+    result = evaluate_now(session)
+    assert result["created"] == 1
+    event = session.exec(select(AlertEvent)).one()
+    assert event.domain_id is None
+    assert "Off-box backup" in event.title
+
+    state = session.get(SyncState, "backup.last_offsite_at")
+    state.value = now.replace(microsecond=0).isoformat()
+    session.add(state)
+    session.commit()
+    result = evaluate_now(session)
+    assert result["resolved"] == 1

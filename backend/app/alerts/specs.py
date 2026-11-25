@@ -186,5 +186,15 @@ SPECS: dict[str, RuleSpec] = {
             ),
             scope="global",
         ),
+        RuleSpec(
+            kind="backup_stale",
+            label="Off-box backup stale",
+            description="No successful off-box backup has completed within the expected interval.",
+            severity="warning",
+            fields=(
+                FieldSpec("hours", "Maximum age", "int", 48, 1, 720, "h"),
+            ),
+            scope="global",
+        ),
     )
 }

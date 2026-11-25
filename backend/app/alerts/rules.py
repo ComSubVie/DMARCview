@@ -22,6 +22,7 @@ from ..models import (
     JobRun,
     Report,
     SourceRecord,
+    SyncState,
     TlsPolicy,
 )
 from .specs import SPECS
@@ -488,6 +489,40 @@ def job_failure(session: Session, domain: Domain | None, cond: dict, now: dateti
     return findings
 
 
+def backup_stale(session: Session, domain: Domain | None, cond: dict, now: datetime) -> list[Finding]:
+    settings = get_settings()
+    if not settings.backup_enabled or not (
+        settings.backup_webdav_url or settings.backup_s3_bucket
+    ):
+        return []
+    state = session.get(SyncState, "backup.last_offsite_at")
+    if state is None or not state.value:
+        return []
+    try:
+        last = datetime.fromisoformat(state.value.replace("Z", "+00:00"))
+    except ValueError:
+        return []
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    age = now - last.astimezone(timezone.utc)
+    hours = age.total_seconds() / 3600
+    threshold = int(cond.get("hours", 48))
+    if hours <= threshold:
+        return []
+    return [
+        Finding(
+            key="backup_stale",
+            severity="warning",
+            title=f"Off-box backup is {hours:.1f}h old",
+            message=(
+                f"The last successful off-box backup was {hours:.1f} hours ago "
+                f"(maximum {threshold}h)."
+            ),
+            payload={"hours": round(hours, 1), "threshold_hours": threshold, "last_at": state.value},
+        )
+    ]
+
+
 def cert_expiry(session: Session, domain: Domain, cond: dict, now: datetime) -> list[Finding]:
     warn_days = int(cond["warn_days"])
     findings: list[Finding] = []
@@ -542,6 +577,7 @@ EVALUATORS: dict[str, Callable[[Session, Domain, dict, datetime], list[Finding]]
     "health_regression": health_regression,
     "sync_failure": sync_failure,
     "job_failure": job_failure,
+    "backup_stale": backup_stale,
 }
 
 

@@ -24,7 +24,7 @@ from ..health.service import (
     serialise_settings,
     update_settings,
 )
-from ..jobs import job_specs, status as jobs_status
+from ..jobs import job_backup, job_specs, status as jobs_status
 from ..models import (
     Domain,
     DomainHealthSnapshot,
@@ -154,6 +154,15 @@ def write_domain_settings(
     audit.record(session, "domain.settings", actor=audit.actor(request), domain=row.name, target=row.name)
     session.commit()
     return serialise_settings(session, row)
+
+
+@router.post("/backup/run")
+async def run_backup(request: Request) -> dict:
+    try:
+        result = await job_backup(force=True, actor=audit.actor(request))
+    except Exception as exc:  # noqa: BLE001 - surface the operation error
+        raise HTTPException(status_code=500, detail=str(exc)[:500]) from exc
+    return {"ok": True, **result}
 
 
 @router.get("/jobs")

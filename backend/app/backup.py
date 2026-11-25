@@ -121,6 +121,30 @@ def extract_snapshot(bundle: Path, dest_dir: Path) -> Path:
     return target
 
 
+def extract_archive(bundle: Path, dest_dir: Path) -> int:
+    """Extract only ``archive/...`` members from a backup bundle."""
+    target_root = Path(dest_dir)
+    target_root.mkdir(parents=True, exist_ok=True)
+    count = 0
+    with tarfile.open(bundle, "r:*") as tar:
+        for member in tar.getmembers():
+            parts = Path(member.name).parts
+            if not member.isfile() or not parts or parts[0] != "archive":
+                continue
+            if Path(member.name).is_absolute() or ".." in parts:
+                raise BackupError(f"unsafe archive member in bundle: {member.name}")
+            target = target_root.joinpath(*parts[1:])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = tar.extractfile(member)
+            if source is None:
+                continue
+            with target.open("wb") as handle:
+                while chunk := source.read(1024 * 1024):
+                    handle.write(chunk)
+            count += 1
+    return count
+
+
 def verify_snapshot(path: Path) -> None:
     """Raise BackupError unless *path* is a readable, consistent SQLite database."""
     path = Path(path)
@@ -151,6 +175,7 @@ def restore_database(
     *,
     db_path: Optional[Path] = None,
     safety: bool = True,
+    with_archive: bool = False,
 ) -> Path:
     """Restore a snapshot (``.db`` or ``.tar.gz``), taking a safety backup first.
 
@@ -190,6 +215,8 @@ def restore_database(
                     stale.unlink()
             temporary.replace(target_path)
             verify_snapshot(target_path)
+            if with_archive and is_bundle(candidate):
+                extract_archive(candidate, settings.data_dir / "archive")
         except Exception:
             temporary.unlink(missing_ok=True)
             if safety_path is not None and safety_path.exists() and not target_path.exists():

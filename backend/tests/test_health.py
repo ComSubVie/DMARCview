@@ -767,3 +767,21 @@ async def test_caa_policy_is_reported_as_pass():
     report = await run_health("tgm.rocks", selectors=["selector1"], dns=FakeDns(records), http=fetcher)
     caa = next(result for result in report.results if result.key == "caa")
     assert caa.status is Status.PASS
+
+
+def test_api_manual_backup_endpoint(auth_client, monkeypatch):
+    async def fake_backup(*, force=False, actor="scheduler"):
+        assert force is True
+        return {
+            "snapshot": "dmarc-test.db",
+            "providers": ["webdav"],
+            "bytes": 123,
+            "sha256": "a" * 64,
+        }
+
+    monkeypatch.setattr("app.routers.health.job_backup", fake_backup)
+    response = auth_client.post("/api/backup/run")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["ok"] is True
+    assert body["providers"] == ["webdav"]

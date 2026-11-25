@@ -9,7 +9,7 @@ from pathlib import Path
 
 import httpx
 
-from app.backup import create_bundle, extract_snapshot, is_bundle, restore_database
+from app.backup import bundle_sha256, create_bundle, extract_archive, extract_snapshot, is_bundle, restore_database
 from app.config import get_settings
 from app.offsite import upload_s3, upload_webdav
 
@@ -42,17 +42,29 @@ def test_bundle_contains_database_and_archive(tmp_path: Path):
     assert extracted.name == db.name
     assert extracted.read_bytes() == db.read_bytes()
 
+    archive_out = tmp_path / "archive-out"
+    assert extract_archive(bundle, archive_out) == 1
+    assert (archive_out / "2026" / "01" / "report.xml").read_text() == "<feedback/>"
+
 
 def test_webdav_upload_uses_basic_auth(tmp_path: Path):
     bundle = _snapshot(tmp_path / "dmarc-20260101-000000.db")
     seen: dict[str, object] = {}
 
+    digest = bundle_sha256(bundle)
+
     def handler(request: httpx.Request) -> httpx.Response:
+        seen.setdefault("methods", []).append(request.method)
+        seen.setdefault("urls", []).append(str(request.url))
         seen["method"] = request.method
         seen["url"] = str(request.url)
         seen["auth"] = request.headers.get("authorization")
-        seen["content_type"] = request.headers.get("content-type")
-        seen["body"] = request.content
+        seen.setdefault("content_types", []).append(request.headers.get("content-type"))
+        seen.setdefault("bodies", []).append(request.content)
+        if request.method == "HEAD":
+            return httpx.Response(200, headers={"content-length": str(bundle.stat().st_size)})
+        if request.method == "GET":
+            return httpx.Response(200, text=f"{digest}  {bundle.name}\n")
         return httpx.Response(201)
 
     settings = get_settings()
@@ -64,11 +76,13 @@ def test_webdav_upload_uses_basic_auth(tmp_path: Path):
         upload_webdav(settings, bundle, transport=httpx.MockTransport(handler))
     )
     assert result["provider"] == "webdav"
-    assert seen["method"] == "PUT"
-    assert seen["url"] == f"https://dav.example/backups/{bundle.name}"
+    assert result["verified"] is True
+    assert seen["methods"][:2] == ["PUT", "PUT"]
+    assert seen["methods"][-2:] == ["HEAD", "GET"]
+    assert seen["urls"][0] == f"https://dav.example/backups/{bundle.name}"
     assert str(seen["auth"]).startswith("Basic ")
-    assert seen["content_type"] == "application/gzip"
-    assert seen["body"] == bundle.read_bytes()
+    assert seen["content_types"][0] == "application/gzip"
+    assert seen["bodies"][0] == bundle.read_bytes()
 
 
 def test_s3_upload_uses_prefix_and_endpoint(tmp_path: Path, monkeypatch):
@@ -80,6 +94,15 @@ def test_s3_upload_uses_prefix_and_endpoint(tmp_path: Path, monkeypatch):
     class FakeClient:
         def upload_file(self, path, bucket, key, ExtraArgs=None):
             seen.update(path=path, bucket=bucket, key=key, extra=ExtraArgs)
+
+        def put_object(self, **kwargs):
+            seen["sidecar"] = kwargs
+
+        def head_object(self, **kwargs):
+            return {
+                "ContentLength": bundle.stat().st_size,
+                "Metadata": {"sha256": bundle_sha256(bundle)},
+            }
 
     monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: (seen.update(client_kwargs=kwargs), FakeClient())[1])
     settings = get_settings()
@@ -97,7 +120,9 @@ def test_s3_upload_uses_prefix_and_endpoint(tmp_path: Path, monkeypatch):
     assert result["provider"] == "s3"
     assert seen["bucket"] == "backups"
     assert seen["key"] == f"dmarcview/{bundle.name}"
-    assert seen["extra"] == {"ContentType": "application/gzip"}
+    assert seen["extra"]["ContentType"] == "application/gzip"
+    assert seen["extra"]["Metadata"]["sha256"] == bundle_sha256(bundle)
+    assert seen["sidecar"]["Key"] == f"dmarcview/{bundle.name}.sha256"
     assert seen["client_kwargs"]["endpoint_url"] == "https://s3.example"
 
 

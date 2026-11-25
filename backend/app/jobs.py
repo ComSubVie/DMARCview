@@ -17,6 +17,7 @@ from typing import Awaitable, Callable, Optional
 
 from sqlmodel import Session, select
 
+from . import audit
 from .backup import backup_database, bundle_sha256, create_bundle
 from .config import get_settings
 from .db import get_engine
@@ -35,7 +36,7 @@ from .models import (
     utcnow,
 )
 from .digest import send_digest
-from .offsite import OffsiteError, targets as offsite_targets, upload_bundle
+from .offsite import targets as offsite_targets, upload_bundle
 from .retention import prune
 
 log = logging.getLogger(__name__)
@@ -144,30 +145,52 @@ def _set_backup_state(value: Optional[str], error: Optional[str]) -> None:
         session.commit()
 
 
-async def job_backup() -> dict:
-    settings = get_settings()
-    if not settings.backup_enabled:
-        return {"skipped": "disabled"}
-    snapshot = backup_database()
-    if not offsite_targets(settings):
-        _set_backup_state(utcnow().replace(microsecond=0).isoformat(), None)
-        return {"snapshot": snapshot.name, "providers": [], "bytes": snapshot.stat().st_size}
-    bundle = create_bundle(snapshot, settings.data_dir / "archive", settings.data_dir / "backups")
-    try:
-        results = await upload_bundle(settings, bundle)
-    except OffsiteError as exc:
-        _set_backup_state(None, str(exc))
-        raise
-    finally:
-        if bundle.exists():
-            bundle.unlink()
-    _set_backup_state(utcnow().replace(microsecond=0).isoformat(), "")
-    return {
-        "snapshot": snapshot.name,
-        "providers": [item["provider"] for item in results],
-        "bytes": sum(int(item.get("bytes", 0)) for item in results),
-        "sha256": bundle_sha256(snapshot),
-    }
+_backup_lock = asyncio.Lock()
+
+
+def _audit_backup(action: str, actor: str, detail: dict) -> None:
+    with Session(get_engine()) as session:
+        audit.record(session, action, actor=actor, detail=detail)
+        session.commit()
+
+
+async def job_backup(*, force: bool = False, actor: str = "scheduler") -> dict:
+    async with _backup_lock:
+        settings = get_settings()
+        if not settings.backup_enabled and not force:
+            return {"skipped": "disabled"}
+        snapshot = backup_database()
+        stamp = utcnow().replace(microsecond=0).isoformat()
+        if not offsite_targets(settings):
+            _set_backup_state(stamp, None)
+            result = {"snapshot": snapshot.name, "providers": [], "bytes": snapshot.stat().st_size}
+            _audit_backup("backup.local", actor, result)
+            return result
+        bundle = create_bundle(snapshot, settings.data_dir / "archive", settings.data_dir / "backups")
+        digest = bundle_sha256(bundle)
+        try:
+            results = await upload_bundle(settings, bundle)
+            result = {
+                "snapshot": snapshot.name,
+                "providers": [item["provider"] for item in results],
+                "bytes": sum(int(item.get("bytes", 0)) for item in results),
+                "sha256": digest,
+                "bundle": bundle.name,
+            }
+            _set_backup_state(stamp, "")
+            _audit_backup("backup.run", actor, result)
+            return result
+        except Exception as exc:
+            _set_backup_state(None, str(exc))
+            _audit_backup(
+                "backup.failed",
+                actor,
+                {"snapshot": snapshot.name, "bundle": bundle.name, "error": str(exc)[:1000]},
+            )
+            raise
+        finally:
+            if bundle.exists():
+                bundle.unlink()
 
 
 DIGEST_STATE_KEY = "digest.last_sent_at"
