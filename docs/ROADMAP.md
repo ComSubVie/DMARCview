@@ -1,13 +1,13 @@
 # Roadmap
 
-_Rev 25 · 25 November 2026 · alert coverage, job failures and HELO clarity (v1.15)_
+_Rev 25 · 25 November 2026 · alert coverage, job failures and HELO clarity (v1.15.2)_
 
 DMARCView began as a self-hosted answer to **“what happened?”** and grew into a complete
 reporting and operations dashboard: **“is my configuration correct?”**, **“tell me when it
 changes”**, **“why did it change?”**, **“what should I do next?”**, and now **“can I prove what
 changed and who changed it?”**.
 
-**Current development release: v1.15.0.** The mandatory roadmap is complete. What remains is
+**Current development release: v1.15.2.** The mandatory roadmap is complete. What remains is
 optional, trigger-based or deliberately parked work.
 
 ## Delivered

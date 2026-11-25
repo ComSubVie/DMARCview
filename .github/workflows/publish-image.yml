@@ -86,15 +86,29 @@ jobs:
           fi
           echo "value=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Verify source version matches tag
+      - name: Sync source version from tag
         if: github.ref_type == 'tag'
+        env:
+          APP_VERSION: ${{ steps.version.outputs.value }}
         run: |
-          expected="${GITHUB_REF_NAME#v}"
-          actual=$(python -c "import sys; sys.path.insert(0, 'backend'); from app.version import VERSION; print(VERSION)")
-          if [[ "$actual" != "$expected" ]]; then
-            echo "backend/app/version.py is $actual but tag is $expected" >&2
-            exit 1
-          fi
+          python - "$APP_VERSION" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          version = sys.argv[1]
+          path = Path("backend/app/version.py")
+          text = path.read_text()
+          updated, count = re.subn(
+              r'(VERSION\s*=\s*os\.environ\.get\(\"DMARCVIEW_VERSION\", \"\"\)\.strip\(\)\s*or\s*\")[^\"]+(\")',
+              rf'\g<1>{version}\g<2>',
+              text,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("Could not update VERSION fallback in backend/app/version.py")
+          path.write_text(updated)
+          print(f"Source version set to {version}")
+          PY
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4

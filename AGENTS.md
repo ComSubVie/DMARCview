@@ -212,7 +212,8 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
   `ghcr.io/<owner>/dmarcview` for `linux/amd64` and `linux/arm64`. `latest` only tracks
   stable tags; `edge` tracks the default branch.
 - Release images get their version from the tag via the `APP_VERSION` Docker build argument;
-  the workflow also checks that `backend/app/version.py` matches a tag before publishing.
+  the workflow writes the tag version into `backend/app/version.py` before building, so a
+  forgotten manual version bump cannot block a release.
 - The release job generates notes with `scripts/generate_release_notes.py`. It uses
   `DEEPSEEK_API_KEY` when configured and falls back to GitHub generated notes. Never commit
   the token or print it; it is an Actions secret.
