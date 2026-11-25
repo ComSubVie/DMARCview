@@ -258,7 +258,7 @@ jobs:
                 "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$previous" "$TAG"
             fi
             printf '**Container image:** %s\n\n' "$image_line"
-            printf '**Digest:** \`%s\`\n' "$DIGEST"
+            printf '**Digest:** `%s`\n' "$DIGEST"
           } > release-notes.md
 
           gh release create "$TAG" \
