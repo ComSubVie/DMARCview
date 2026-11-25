@@ -441,6 +441,8 @@ class IpMeta(SQLModel, table=True):
 
     ip: str = Field(primary_key=True, max_length=64)
     ptr: Optional[str] = Field(default=None, max_length=255)
+    fcrdns_status: Optional[str] = Field(default=None, max_length=32)
+    fcrdns_forward: Optional[str] = Field(default=None, max_length=255)
     asn: Optional[int] = Field(default=None)
     asn_org: Optional[str] = Field(default=None, max_length=255)
     updated_at: datetime = Field(default_factory=utcnow)

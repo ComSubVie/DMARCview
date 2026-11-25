@@ -21,6 +21,14 @@ function SourceRow({ source }: { source: Source }) {
             {source.ptr}
           </div>
         ) : null}
+        {source.fcrdns_status ? (
+          <div
+            className={`source-fcrdns ${source.fcrdns_status}`}
+            title={source.fcrdns_forward ? `Forward: ${source.fcrdns_forward}` : "No forward match"}
+          >
+            FCrDNS {source.fcrdns_status === "none" ? "no PTR" : source.fcrdns_status}
+          </div>
+        ) : null}
       </td>
       <td className="hide-sm">
         <span className="country">

@@ -218,8 +218,8 @@ def sources_csv(
         .order_by(func.sum(SourceRecord.message_count).desc())
     ).all()
     ips = [item[1] for item in rows]
-    ptrs = {
-        meta.ip: meta.ptr
+    meta_by_ip = {
+        meta.ip: meta
         for meta in session.exec(select(IpMeta).where(IpMeta.ip.in_(ips))).all()
     }
     body = _csv(
@@ -227,7 +227,9 @@ def sources_csv(
             [
                 name,
                 ip,
-                ptrs.get(ip) or "",
+                (meta_by_ip[ip].ptr if ip in meta_by_ip else None) or "",
+                (meta_by_ip[ip].fcrdns_status if ip in meta_by_ip else None) or "",
+                (meta_by_ip[ip].fcrdns_forward if ip in meta_by_ip else None) or "",
                 code or "",
                 country or "",
                 int(messages or 0),
@@ -244,6 +246,8 @@ def sources_csv(
             "domain",
             "source_ip",
             "ptr",
+            "fcrdns",
+            "ptr_forward",
             "country_code",
             "country",
             "messages",

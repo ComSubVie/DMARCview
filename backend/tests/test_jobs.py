@@ -13,12 +13,17 @@ from app.models import Domain, DomainSettings, IpMeta, Report, SourceRecord
 
 
 class FakePtrDns:
-    def __init__(self, mapping):
+    def __init__(self, mapping, forward=None):
         self.mapping = mapping
+        self.forward = forward or {}
 
     async def ptr(self, ip):
         value = self.mapping.get(ip)
         return Lookup(values=(value,) if value else (), exists=bool(value))
+
+    async def addresses(self, host):
+        values = self.forward.get(host, ())
+        return Lookup(values=tuple(values), exists=bool(values))
 
 
 def test_ptr_enrichment_stores_full_ip(session: Session, monkeypatch):
@@ -60,7 +65,10 @@ def test_ptr_enrichment_stores_full_ip(session: Session, monkeypatch):
 
     monkeypatch.setattr(
         "app.jobs.get_dns_client",
-        lambda: FakePtrDns({"62.116.130.25": "mail.tgm.rocks"}),
+        lambda: FakePtrDns(
+            {"62.116.130.25": "mail.tgm.rocks"},
+            {"mail.tgm.rocks": ("62.116.130.25",)},
+        ),
     )
 
     result = asyncio.run(job_ptr_enrichment())
@@ -69,6 +77,8 @@ def test_ptr_enrichment_stores_full_ip(session: Session, monkeypatch):
     meta = session.exec(select(IpMeta)).all()
     assert [item.ip for item in meta] == ["62.116.130.25"]
     assert meta[0].ptr == "mail.tgm.rocks"
+    assert meta[0].fcrdns_status == "match"
+    assert meta[0].fcrdns_forward == "62.116.130.25"
 
     again = asyncio.run(job_ptr_enrichment())
     assert again == {"looked_up": 0, "pending": 0}
@@ -97,3 +107,56 @@ def test_scheduled_checks_respect_mute_and_toggle(session: Session):
     session.add(settings)
     session.commit()
     assert _scheduled_checks_disabled(session, domain.id, datetime.now(timezone.utc)) is True
+
+
+def test_fcrdns_mismatch_and_no_ptr(session: Session, monkeypatch):
+    from app.jobs import _fcrdns_status
+    from app.health.dns import Lookup
+
+    class Dns:
+        async def addresses(self, host):
+            return Lookup(values=("192.0.2.10",), exists=True)
+
+    assert asyncio.run(_fcrdns_status(Dns(), "192.0.2.99", "mail.example.")) == (
+        "mismatch",
+        "192.0.2.10",
+    )
+
+    domain = Domain(name="fcrdns.example")
+    session.add(domain)
+    session.commit()
+    session.refresh(domain)
+    report = Report(
+        domain_id=domain.id,
+        org_name="example.net",
+        report_id="fcrdns-1",
+        policy_domain="fcrdns.example",
+        date_begin=datetime.now(timezone.utc) - timedelta(days=1),
+        date_end=datetime.now(timezone.utc),
+        report_date=date.today(),
+        message_count=1,
+        aligned_count=1,
+        failed_count=0,
+        record_count=1,
+        source_count=1,
+        raw_sha256="c" * 64,
+        raw_xml=b"<feedback/>",
+    )
+    session.add(report)
+    session.commit()
+    session.refresh(report)
+    session.add(
+        SourceRecord(
+            report_id=report.id,
+            domain_id=domain.id,
+            report_date=report.report_date,
+            source_ip="198.51.100.4",
+            message_count=1,
+        )
+    )
+    session.commit()
+    monkeypatch.setattr("app.jobs.get_dns_client", lambda: FakePtrDns({}))
+    asyncio.run(job_ptr_enrichment())
+    meta = session.exec(select(IpMeta).where(IpMeta.ip == "198.51.100.4")).one()
+    assert meta.fcrdns_status == "none"
+    assert meta.fcrdns_forward is None

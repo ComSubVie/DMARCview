@@ -7,6 +7,7 @@ is recorded in ``job_runs`` so the UI can show what happened and when.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import random
 from contextlib import suppress
@@ -202,6 +203,24 @@ async def job_alerts() -> dict:
     }
 
 
+async def _fcrdns_status(dns, ip: str, ptr: str) -> tuple[str, Optional[str]]:
+    """Forward-confirm a PTR name against the source IP."""
+    try:
+        answer = await dns.addresses(ptr.rstrip("."))
+    except Exception as exc:  # noqa: BLE001 - network errors are data
+        return "unknown", str(exc)[:255]
+    if answer.error:
+        return "unknown", str(answer.error)[:255]
+    values = [str(value).strip() for value in (answer.values or []) if str(value).strip()]
+    forward = ", ".join(values[:3]) or None
+    try:
+        wanted = ipaddress.ip_address(ip)
+        matched = any(ipaddress.ip_address(value) == wanted for value in values)
+    except ValueError:
+        matched = ip in values
+    return ("match" if matched else "mismatch"), forward
+
+
 async def job_ptr_enrichment() -> dict:
     settings = get_settings()
     if not settings.ptr_enrichment_enabled:
@@ -219,8 +238,9 @@ async def job_ptr_enrichment() -> dict:
         meta = metas.get(ip)
         needs_ptr = meta is None
         needs_asn = asn_resolver.available and (meta is None or meta.asn is None)
-        if needs_ptr or needs_asn:
-            needs[ip] = {"ptr": needs_ptr, "asn": needs_asn}
+        needs_fcrdns = meta is None or meta.fcrdns_status is None
+        if needs_ptr or needs_asn or needs_fcrdns:
+            needs[ip] = {"ptr": needs_ptr, "asn": needs_asn, "fcrdns": needs_fcrdns}
     todo = list(needs)[:250]
     if not todo:
         return {"looked_up": 0, "pending": 0}
@@ -228,7 +248,9 @@ async def job_ptr_enrichment() -> dict:
     dns = get_dns_client()
     semaphore = asyncio.Semaphore(10)
 
-    async def lookup(ip: str) -> tuple[str, Optional[str], Optional[int], Optional[str]]:
+    async def lookup(
+        ip: str,
+    ) -> tuple[str, Optional[str], Optional[int], Optional[str], Optional[str], Optional[str]]:
         async with semaphore:
             ptr = None
             if needs[ip]["ptr"]:
@@ -238,21 +260,38 @@ async def job_ptr_enrichment() -> dict:
                     answer = None
                 if answer and answer.values:
                     ptr = answer.values[0][:255]
+            fcrdns, forward = None, None
+            if needs[ip]["fcrdns"]:
+                if ptr:
+                    fcrdns, forward = await _fcrdns_status(dns, ip, ptr)
+                else:
+                    fcrdns = "none"
             asn, asn_org = asn_resolver.lookup(ip) if needs[ip]["asn"] else (None, None)
-            return ip, ptr, asn, asn_org
+            return ip, ptr, asn, asn_org, fcrdns, forward
 
     results = await asyncio.gather(*(lookup(ip) for ip in todo))
     with Session(get_engine()) as session:
-        for ip, ptr, asn, asn_org in results:
+        for ip, ptr, asn, asn_org, fcrdns, forward in results:
             meta = session.get(IpMeta, ip)
             if meta is None:
-                meta = IpMeta(ip=ip, ptr=ptr, asn=asn, asn_org=asn_org, updated_at=utcnow())
+                meta = IpMeta(
+                    ip=ip,
+                    ptr=ptr,
+                    asn=asn,
+                    asn_org=asn_org,
+                    fcrdns_status=fcrdns,
+                    fcrdns_forward=forward,
+                    updated_at=utcnow(),
+                )
             else:
                 if ptr:
                     meta.ptr = ptr
                 if needs[ip]["asn"]:
                     meta.asn = asn
                     meta.asn_org = asn_org
+                if needs[ip]["fcrdns"]:
+                    meta.fcrdns_status = fcrdns
+                    meta.fcrdns_forward = forward
                 meta.updated_at = utcnow()
             session.add(meta)
         session.commit()

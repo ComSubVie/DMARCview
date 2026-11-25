@@ -2653,6 +2653,17 @@ table.data td .primary-cell {
   text-overflow: ellipsis;
 }
 
+.source-fcrdns {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-4);
+}
+
+.source-fcrdns.match { color: #067647; }
+.source-fcrdns.mismatch { color: #b42318; }
+.source-fcrdns.unknown { color: #b54708; }
+
 /* ------------------------------------------------------------------ alerts */
 .channel-grid {
   display: grid;

@@ -58,6 +58,8 @@ export type CheckState = "pass" | "fail" | "none" | "mixed";
 export interface Source {
   ip: string;
   ptr: string | null;
+  fcrdns_status: "match" | "mismatch" | "none" | "unknown" | null;
+  fcrdns_forward: string | null;
   messages: number;
   aligned: number;
   failed: number;

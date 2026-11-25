@@ -980,11 +980,11 @@ def _source_breakdown(session: Session, domain_id: Optional[int], rng: DateRange
     ).all():
         orgs.setdefault(ip, []).append(org)
 
-    ptr_map: dict[str, str | None] = {}
+    meta_map: dict[str, IpMeta] = {}
     if rows:
         addresses = [row[0] for row in rows]
         for meta in session.exec(select(IpMeta).where(IpMeta.ip.in_(addresses))).all():
-            ptr_map[meta.ip] = meta.ptr
+            meta_map[meta.ip] = meta
 
     out: list[dict[str, Any]] = []
     for (
@@ -1009,7 +1009,9 @@ def _source_breakdown(session: Session, domain_id: Optional[int], rng: DateRange
         out.append(
             {
                 "ip": ip,
-                "ptr": ptr_map.get(ip),
+                "ptr": meta_map[ip].ptr if ip in meta_map else None,
+                "fcrdns_status": meta_map[ip].fcrdns_status if ip in meta_map else None,
+                "fcrdns_forward": meta_map[ip].fcrdns_forward if ip in meta_map else None,
                 "messages": total,
                 "aligned": int(aligned),
                 "failed": total - int(aligned),

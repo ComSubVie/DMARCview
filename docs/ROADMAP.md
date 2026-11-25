@@ -1,13 +1,13 @@
 # Roadmap
 
-_Rev 22 · 25 November 2026 · JMAP submission response fix (v1.13.3)_
+_Rev 23 · 25 November 2026 · sending-IP FCrDNS (v1.14)_
 
 DMARCView began as a self-hosted answer to **“what happened?”** and grew into a complete
 reporting and operations dashboard: **“is my configuration correct?”**, **“tell me when it
 changes”**, **“why did it change?”**, **“what should I do next?”**, and now **“can I prove what
 changed and who changed it?”**.
 
-**Current development release: v1.13.3.** The mandatory roadmap is complete. What remains is
+**Current development release: v1.14.0.** The mandatory roadmap is complete. What remains is
 optional, trigger-based or deliberately parked work.
 
 ## Delivered
@@ -19,12 +19,13 @@ optional, trigger-based or deliberately parked work.
 | **Health** | Live DMARC (including RFC 9989 tree walk/PSD), SPF, DKIM rotation, MX, MTA-STS, TLS-RPT, DNSSEC, BIMI; transport STARTTLS/certificate/DANE probes; snapshot history and DNS diffs. |
 | **Alerts** | Nine rules over reports, snapshots and probes; SMTP or JMAP email submission, Telegram/Signal/webhook; dedupe, cooldown, resolution; per-domain threshold and cooldown overrides; delivery retry with backoff; weekly digest. |
 | **Distribution** | Signed read-only share links; CSV/JSON/raw export; sortable fleet comparison; domain tags/groups; saved fleet views. |
-| **Operations** | Scheduler and job history; local SQLite backup and verified restore; retention with raw archiving; known-sender expectations; append-only audit log. |
+| **Operations** | Scheduler and job history; local SQLite backup and verified restore; retention with raw archiving; known-sender expectations; append-only audit log; PTR/FCrDNS enrichment for sending IPs. |
 | **Signal quality** | Every TLS-RPT policy domain attributed separately; RFC 9990 report warnings; DMARC/SPF/MTA-STS/TLS-RPT change history. |
 | **DMARCbis** | Report fields `np`, `testing`, `discovery_method`; parent/PSD discovery; external `rua`/`ruf` authorization; readiness panel; effective-policy coverage. Existing author-domain logic is unchanged. |
 
 ## Recent releases
 
+- **v1.14 — sending-IP FCrDNS.** Cached PTR plus forward confirmation for report source IPs, shown in Sources and exports.
 - **v1.13 — JMAP email transport.** Alerts and the weekly digest can send through SMTP or
   Stalwart JMAP `EmailSubmission`, using `ALERT_TO`/`DIGEST_TO` and `JMAP_FROM`.
 - **v1.12 — operator visibility.** Editable per-domain alert overrides, dedicated DNS diff view,
@@ -41,7 +42,7 @@ optional, trigger-based or deliberately parked work.
 
 ## Current status
 
-- **Tests:** 119 backend tests, plus the frontend type/build check in CI.
+- **Tests:** 120 backend tests, plus the frontend type/build check in CI.
 - **Schema:** Alembic `0001` through `0013`; upgrades run automatically on start.
 - **Runtime:** one container, one SQLite database, no Redis/Celery, no telemetry.
 
@@ -55,6 +56,7 @@ Known limits:
 - Timeline/DNS-diff auto-history covers the last 20 health snapshots and 180 days.
 - Share-link throttling is per-process memory; revisit with multiple workers/replicas.
 - Alert-override thresholds and cooldowns are editable; the API remains the source of truth.
+- FCrDNS is informational source context, not an alert rule.
 
 ## Optional backlog
 

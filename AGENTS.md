@@ -62,7 +62,7 @@ docker build -t dmarcview .
 | `backend/app/share.py` | Share-token signing, public payload shaping, storage helpers |
 | `backend/app/retention.py` | Raw archiving and opt-in report pruning |
 | `backend/app/models.py` | SQLModel schema — the source of truth for Alembic |
-| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute, `0006` DMARCbis fields, `0007` annotations, `0008` source expectations, `0009` alert overrides/retry, `0010` domain tags, `0011` saved fleet views, `0012` report errors, `0013` audit log) |
+| `backend/migrations/` | Alembic revisions (`0001` baseline, `0002` health/probes/jobs, `0003` alerts, `0004` ASN, `0005` share links + mute, `0006` DMARCbis fields, `0007` annotations, `0008` source expectations, `0009` alert overrides/retry, `0010` domain tags, `0011` saved fleet views, `0012` report errors, `0013` audit log, `0014` IP FCrDNS) |
 | `frontend/src/` | `pages/`, `components/`, `state.tsx`, `api.ts`, `types.ts`, `styles.css` |
 | `samples/` | Hand-written CRLF `.eml` fixtures used by the test suite |
 | `scripts/` | GeoIP/demo helpers and the DeepSeek release-note generator |
@@ -224,7 +224,7 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
 the user asks for them. Export, fleet comparison, retention, DMARCbis and decision support are
-delivered, including v1.13 JMAP email transport. No mandatory roadmap work remains. MFA stays
+delivered, including v1.14 sending-IP FCrDNS. No mandatory roadmap work remains. MFA stays
 parked; off-box backup, RUF and platform work remain optional/trigger-based.
 
 ## Security expectations

@@ -38,8 +38,8 @@ answers: *is my mail authenticating, who is sending as me, and is delivery encry
 - **Saved fleet views.** Name and recall fleet filters and sort order: group, policy, health,
   failing sources, alignment/TLS thresholds.
 - **Operator diagnostics.** Per-domain alert thresholds, a DNS/SPF/MTA-STS/TLS-RPT diff history,
-  reporter quality scores, delivery attempts with manual retry, digest controls and an append-only
-  audit log.
+  reporter quality scores, delivery attempts with manual retry, digest controls, an append-only
+  audit log, and sending-IP PTR/forward-confirmed rDNS context.
 - **TLS delivery.** Session success rate per MX host, every policy domain in multi-policy
   TLS-RPT reports, failure reasons
   (`certificate-expired`, `starttls-not-supported`, …) and the reporters behind them.
@@ -274,7 +274,7 @@ All settings are environment variables (`.env` is loaded automatically).
 | `PROBE_INTERVAL_MINUTES` | `360` | How often MX/submission/IMAP probes run. |
 | `PROBE_TIMEOUT_SECONDS` | `8` | Per-target connect/handshake timeout. |
 | `HTTP_TIMEOUT_SECONDS` | `6` | Timeout for MTA-STS and BIMI fetches. |
-| `PTR_ENRICHMENT_ENABLED` | `true` | Reverse-resolve sending IPs in the background. |
+| `PTR_ENRICHMENT_ENABLED` | `true` | Reverse-resolve sending IPs and forward-confirm their PTR names. |
 | `JOBS_INITIAL_DELAY_SECONDS` | `25` | Delay before the first scheduled run after boot. |
 | `BACKUP_KEEP` | `14` | Local snapshots retained by `app.cli backup`. |
 | `RETENTION_DAYS` | `0` | Archive raw payloads and prune reports older than this. `0` keeps forever. |
@@ -479,7 +479,7 @@ MFA and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (119 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (120 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
