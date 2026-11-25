@@ -189,10 +189,10 @@ SPECS: dict[str, RuleSpec] = {
         RuleSpec(
             kind="backup_stale",
             label="Off-box backup stale",
-            description="No successful off-box backup has completed within the expected interval.",
+            description="No successful off-box backup has completed within the expected interval. The threshold is at least twice BACKUP_INTERVAL_HOURS.",
             severity="warning",
             fields=(
-                FieldSpec("hours", "Maximum age", "int", 48, 1, 720, "h"),
+                FieldSpec("hours", "Minimum maximum age", "int", 48, 1, 720, "h"),
             ),
             scope="global",
         ),

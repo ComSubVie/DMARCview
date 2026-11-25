@@ -726,6 +726,11 @@ export interface FleetHealthItem {
   probes: number;
   failing_probes: number;
   next_expiry_days: number | null;
+  next_action: {
+    status: HealthStatus;
+    label: string;
+    remediation: string;
+  } | null;
 }
 
 export interface StorageInfo {

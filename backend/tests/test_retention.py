@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.models import (
+    AuditEvent,
     Domain,
     Report,
     SourceRecord,
@@ -16,7 +17,7 @@ from app.models import (
     TlsPolicy,
     TlsReport,
 )
-from app.retention import prune
+from app.retention import prune, prune_audit
 
 
 def _report(session: Session, domain: Domain, when: datetime, suffix: str) -> Report:
@@ -128,3 +129,16 @@ def test_retention_archives_then_prunes(session: Session):
     assert preview["dmarc_reports"] == 1
     assert session.get(Report, dry_id) is not None
     assert not any("dry" in path.name for path in archive.rglob("dmarc-*.xml"))
+
+
+def test_audit_retention_deletes_old_events(session: Session):
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    session.add(AuditEvent(action="old", at=now - timedelta(days=40)))
+    session.add(AuditEvent(action="new", at=now - timedelta(days=1)))
+    session.commit()
+
+    result = prune_audit(session, 30, now=now)
+    assert result["deleted"] == 1
+    assert [row.action for row in session.exec(select(AuditEvent)).all()] == ["new"]

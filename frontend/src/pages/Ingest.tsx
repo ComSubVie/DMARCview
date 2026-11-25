@@ -43,6 +43,7 @@ export function IngestPage() {
   const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [jobs, setJobs] = useState<JobsResponse | null>(null);
   const [backingUp, setBackingUp] = useState(false);
+  const [testingBackup, setTestingBackup] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -96,6 +97,20 @@ export function IngestPage() {
       toast(err instanceof Error ? err.message : "Backup failed", "error");
     } finally {
       setBackingUp(false);
+    }
+  }
+
+  async function testBackup() {
+    setTestingBackup(true);
+    try {
+      const result = await api.testBackup();
+      const failure = result.results.find((item) => !item.ok);
+      if (result.ok) toast("Backup targets verified");
+      else toast(failure?.error || "Backup target test failed", "error");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Backup target test failed", "error");
+    } finally {
+      setTestingBackup(false);
     }
   }
 
@@ -339,6 +354,17 @@ export function IngestPage() {
                 >
                   {backingUp ? <span className="spinner" /> : <RefreshCw size={13} />}
                   Back up now
+                </button>
+              ) : null}
+              {storage && storage.offsite.providers.length > 0 ? (
+                <button
+                  className="btn ghost sm"
+                  type="button"
+                  onClick={() => void testBackup()}
+                  disabled={testingBackup}
+                >
+                  {testingBackup ? <span className="spinner" /> : null}
+                  Test
                 </button>
               ) : null}
               <Badge tone="neutral">{storage ? formatBytes(storage.total_bytes) : "—"}</Badge>

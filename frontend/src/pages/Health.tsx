@@ -9,6 +9,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { CheckIcon, expiryTone, overallMeta, statusClass, statusMeta } from "../components/health-ui";
 import { DnsDiffCard } from "../components/DnsDiffCard";
@@ -165,7 +166,20 @@ function DmarcbisCard({ result, domain }: { result: HealthCheckResult; domain: s
   );
 }
 
-function CheckCard({ result }: { result: HealthCheckResult }) {
+const CHECK_LINKS: Record<string, { to: string; label: string }> = {
+  dmarc: { to: "/", label: "Open dashboard" },
+  spf: { to: "/", label: "View senders" },
+  dkim: { to: "/", label: "View senders" },
+  tls_rpt: { to: "/tls", label: "Open TLS reports" },
+};
+
+function CheckCard({
+  result,
+  link,
+}: {
+  result: HealthCheckResult;
+  link?: { to: string; label: string };
+}) {
   const meta = statusMeta[result.status];
   return (
     <article className={`card check-card ${statusClass(result.status)}`}>
@@ -189,6 +203,12 @@ function CheckCard({ result }: { result: HealthCheckResult }) {
           <Wrench size={12} />
           {result.remediation}
         </p>
+      ) : null}
+      {link ? (
+        <Link className="check-link" to={link.to}>
+          {link.label}
+          <ArrowRight size={12} />
+        </Link>
       ) : null}
     </article>
   );
@@ -513,6 +533,7 @@ export function HealthPage() {
   }
 
   if (domain === "all") {
+    const nextFleet = fleet.find((item) => item.next_action);
     return (
       <div className="fade-in">
         <div className="section-head">
@@ -521,6 +542,19 @@ export function HealthPage() {
             <p>Live DNS, MTA-STS and transport checks for every domain.</p>
           </div>
         </div>
+        {nextFleet?.next_action ? (
+          <div className="callout health-next">
+            <Wrench size={15} style={{ flex: "none", marginTop: 1 }} />
+            <span>
+              <strong>Next:</strong> {nextFleet.domain} — {nextFleet.next_action.label}:{" "}
+              {nextFleet.next_action.remediation}
+              <button className="btn ghost sm" type="button" onClick={() => setDomain(nextFleet.domain)}>
+                Open domain
+                <ArrowRight size={12} />
+              </button>
+            </span>
+          </div>
+        ) : null}
         <section className="card">
           {loading ? (
             <div style={{ padding: 20, display: "grid", gap: 10 }}>
@@ -619,6 +653,12 @@ export function HealthPage() {
   const core = health.results.filter((result) => result.core);
   const optional = health.results.filter((result) => !result.core);
   const dmarc = health.results.find((result) => result.key === "dmarc");
+  const next = [...health.results]
+    .filter((result) => result.status === "fail" || result.status === "warn")
+    .sort(
+      (a, b) =>
+        (a.status === "fail" ? 0 : 1) - (b.status === "fail" ? 0 : 1),
+    )[0];
 
   return (
     <div className="fade-in">
@@ -667,7 +707,7 @@ export function HealthPage() {
           </div>
           <p className="tiny muted" style={{ marginTop: 8, lineHeight: 1.6 }}>
             Core checks cover DMARC, SPF, DKIM and MX. Optional checks add MTA-STS, TLS-RPT, DNSSEC,
-            BIMI, CAA and HELO/EHLO DNS (when configured). The HELO check validates DNS only;
+            BIMI, CAA, DANE (when TLSA records exist) and HELO/EHLO DNS (when configured). The HELO check validates DNS only;
             it does not observe Stalwart’s outbound session. Transport probes verify STARTTLS and
             certificate expiry on the actual hosts.
           </p>
@@ -684,9 +724,24 @@ export function HealthPage() {
         </div>
       </div>
 
+      {next ? (
+        <div className="callout health-next">
+          <Wrench size={15} style={{ flex: "none", marginTop: 1 }} />
+          <span>
+            <strong>Next:</strong> {next.label} — {next.remediation || next.summary}
+            {CHECK_LINKS[next.key] ? (
+              <Link className="check-link" to={CHECK_LINKS[next.key].to}>
+                {CHECK_LINKS[next.key].label}
+                <ArrowRight size={12} />
+              </Link>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
+
       <div className="check-grid">
         {core.map((result) => (
-          <CheckCard key={result.key} result={result} />
+          <CheckCard key={result.key} result={result} link={CHECK_LINKS[result.key]} />
         ))}
       </div>
 
@@ -699,7 +754,7 @@ export function HealthPage() {
           <h2 className="subsection-title">Optional checks</h2>
           <div className="check-grid">
             {optional.map((result) => (
-              <CheckCard key={result.key} result={result} />
+              <CheckCard key={result.key} result={result} link={CHECK_LINKS[result.key]} />
             ))}
           </div>
         </>

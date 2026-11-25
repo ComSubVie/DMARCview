@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import sqlite3
 import tarfile
 from pathlib import Path
 
 import httpx
 
-from app.backup import bundle_sha256, create_bundle, extract_archive, extract_snapshot, is_bundle, restore_database
+from app.backup import bundle_sha256, create_bundle, extract_archive, extract_snapshot, is_bundle, prune_bundles, restore_database
 from app.config import get_settings
-from app.offsite import upload_s3, upload_webdav
+from app.offsite import download_s3, fetch_latest, list_s3, test_s3 as probe_s3, upload_s3, upload_webdav
 
 
 def _snapshot(path: Path) -> Path:
@@ -137,3 +138,106 @@ def test_restore_accepts_bundle(tmp_path: Path):
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0015"
     finally:
         connection.close()
+
+
+def test_fetch_latest_webdav_verifies_checksum(tmp_path: Path):
+    bundle = create_bundle(_snapshot(tmp_path / "dmarc-20260101-000000.db"), None, tmp_path)
+    digest = bundle_sha256(bundle)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "PROPFIND":
+            return httpx.Response(
+                207,
+                text=(
+                    '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">'
+                    f"<d:response><d:href>/backups/{bundle.name}</d:href></d:response>"
+                    "</d:multistatus>"
+                ),
+            )
+        if request.url.path.endswith(".sha256"):
+            return httpx.Response(200, text=f"{digest}  {bundle.name}\n")
+        return httpx.Response(200, content=bundle.read_bytes())
+
+    settings = get_settings()
+    settings = settings.__class__(
+        **{
+            **settings.__dict__,
+            "backup_webdav_url": "https://dav.example/backups",
+            "data_dir": tmp_path,
+        }
+    )
+    result = asyncio.run(
+        fetch_latest(
+            settings,
+            dest_dir=tmp_path / "downloaded",
+            transport=httpx.MockTransport(handler),
+        )
+    )
+    assert result["provider"] == "webdav"
+    assert Path(result["path"]).name == bundle.name
+    assert Path(result["path"]).read_bytes() == bundle.read_bytes()
+
+
+def test_prune_bundles_keeps_newest(tmp_path: Path):
+    names = ["dmarc-20260101-000000", "dmarc-20260102-000000", "dmarc-20260103-000000"]
+    for name in names:
+        (tmp_path / f"{name}.tar.gz").write_bytes(b"x")
+    assert prune_bundles(tmp_path, 2) == 1
+    assert sorted(path.name for path in tmp_path.glob("dmarc-*.tar.gz")) == [
+        f"{names[1]}.tar.gz",
+        f"{names[2]}.tar.gz",
+    ]
+
+
+def test_s3_list_download_and_target_test(tmp_path: Path, monkeypatch):
+    import boto3
+
+    bundle = create_bundle(_snapshot(tmp_path / "dmarc-20260101-000000.db"), None, tmp_path)
+    digest = bundle_sha256(bundle)
+    calls: list[tuple[str, dict]] = []
+
+    class FakeClient:
+        def list_objects_v2(self, **kwargs):
+            calls.append(("list", kwargs))
+            return {
+                "Contents": [
+                    {"Key": "dmarcview/dmarc-20260101-000000.tar.gz"},
+                    {"Key": "dmarcview/dmarc-20260101-000000.tar.gz.sha256"},
+                ]
+            }
+
+        def download_file(self, bucket, key, filename):
+            Path(filename).write_bytes(bundle.read_bytes())
+
+        def get_object(self, **kwargs):
+            return {"Body": io.BytesIO(f"{digest}  {bundle.name}\n".encode())}
+
+        def head_bucket(self, **kwargs):
+            calls.append(("head_bucket", kwargs))
+
+        def put_object(self, **kwargs):
+            calls.append(("put", kwargs))
+
+        def delete_object(self, **kwargs):
+            calls.append(("delete", kwargs))
+
+    monkeypatch.setattr(boto3, "client", lambda *args, **kwargs: FakeClient())
+    settings = get_settings()
+    settings = settings.__class__(
+        **{
+            **settings.__dict__,
+            "backup_s3_bucket": "backups",
+            "backup_s3_prefix": "dmarcview/",
+            "data_dir": tmp_path,
+        }
+    )
+
+    assert list_s3(settings) == [bundle.name]
+    dest = tmp_path / "downloaded" / bundle.name
+    download_s3(settings, bundle.name, dest)
+    assert dest.read_bytes() == bundle.read_bytes()
+    result = probe_s3(settings)
+    assert result == {"provider": "s3", "ok": True}
+    assert any(name == "head_bucket" for name, _ in calls)
+    assert any(name == "put" for name, _ in calls)
+    assert any(name == "delete" for name, _ in calls)

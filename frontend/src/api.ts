@@ -180,6 +180,11 @@ export const api = {
       "/backup/run",
       { method: "POST" },
     ),
+  testBackup: () =>
+    request<{
+      ok: boolean;
+      results: { provider: string; ok: boolean; error?: string }[];
+    }>("/backup/test", { method: "POST" }),
   jobs: () => request<import("./types").JobsResponse>("/jobs"),
 
   shareLinks: () =>

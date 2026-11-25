@@ -367,6 +367,7 @@ class SpfEvaluation:
     voids: int = 0
     all_qualifier: Optional[str] = None
     includes: list[str] = field(default_factory=list)
+    lookup_sources: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
 
@@ -411,6 +412,7 @@ async def evaluate_spf(
             result.lookups += child.lookups
             result.voids += child.voids
             result.includes.append(f"redirect:{target}")
+            result.lookup_sources.append(term)
             result.errors.extend(child.errors)
             continue
 
@@ -419,6 +421,7 @@ async def evaluate_spf(
             continue
 
         result.lookups += 1
+        result.lookup_sources.append(term)
         target = domain
         if ":" in body:
             target = body.split(":", 1)[1].split("/", 1)[0]
@@ -471,6 +474,8 @@ async def check_spf(ctx: CheckContext) -> CheckResult:
     ]
     if evaluation.includes:
         details.append("includes: " + ", ".join(evaluation.includes[:8]))
+    if evaluation.lookup_sources:
+        details.append("lookup sources: " + ", ".join(evaluation.lookup_sources[:10]))
     details.extend(evaluation.errors[:4])
     evidence = {
         "record": evaluation.record,
@@ -481,6 +486,7 @@ async def check_spf(ctx: CheckContext) -> CheckResult:
     }
 
     if evaluation.lookups > 10:
+        sources = ", ".join(evaluation.lookup_sources[:8]) or "the includes listed above"
         return _result(
             "spf",
             "SPF",
@@ -488,7 +494,7 @@ async def check_spf(ctx: CheckContext) -> CheckResult:
             f"Too many DNS lookups ({evaluation.lookups}/10) — receivers return permerror",
             core=True,
             details=details,
-            remediation="Flatten the record or remove unused includes so the total stays at or below 10.",
+            remediation=f"Flatten or remove these lookups: {sources}. Keep the total at or below 10.",
             evidence=evidence,
         )
     if evaluation.voids > 2:

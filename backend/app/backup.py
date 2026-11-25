@@ -170,6 +170,42 @@ def verify_snapshot(path: Path) -> None:
         connection.close()
 
 
+def prune_bundles(directory: Path, keep: int) -> int:
+    """Remove old local ``dmarc-*.tar.gz`` bundles, keeping the newest *keep*."""
+    if keep <= 0:
+        return 0
+    bundles = sorted(Path(directory).glob("dmarc-*.tar.gz"))
+    removed = 0
+    for old in bundles[:-keep]:
+        with suppress(OSError):
+            old.unlink()
+            removed += 1
+    return removed
+
+
+def verify_backup(path: Path) -> dict:
+    """Verify a standalone snapshot or bundle without restoring it."""
+    candidate = Path(path).expanduser()
+    if not candidate.exists() or not candidate.is_file():
+        raise BackupError(f"backup not found at {candidate}")
+    if not is_bundle(candidate):
+        verify_snapshot(candidate)
+        return {"kind": "snapshot", "path": str(candidate)}
+    with tempfile.TemporaryDirectory(prefix="dmarcview-verify-") as temp:
+        extracted = extract_snapshot(candidate, Path(temp))
+        verify_snapshot(extracted)
+        count = 0
+        with tarfile.open(candidate, "r:*") as tar:
+            count = sum(
+                1
+                for member in tar.getmembers()
+                if member.isfile()
+                and Path(member.name).parts
+                and Path(member.name).parts[0] == "archive"
+            )
+    return {"kind": "bundle", "path": str(candidate), "archive_files": count}
+
+
 def restore_database(
     snapshot: Path,
     *,

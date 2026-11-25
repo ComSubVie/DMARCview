@@ -15,8 +15,18 @@ function ProbeRow({ probe }: { probe: TransportProbeResult }) {
           {probe.host}
           <span className="probe-port">:{probe.port}</span>
         </div>
-        <div className="probe-meta">
-          {probe.error ?? `${probe.tls_version ?? "TLS"}${probe.dane_status === "match" ? " · DANE" : ""}`}
+        <div
+          className="probe-meta"
+          title={String(probe.details?.dane_detail ?? "") || undefined}
+        >
+          {probe.error ??
+            `${probe.tls_version ?? "TLS"}${
+              probe.dane_status === "match"
+                ? " · DANE"
+                : probe.dane_status === "unvalidated"
+                  ? " · DANE unvalidated"
+                  : ""
+            }`}
         </div>
       </div>
       <span className={`probe-days ${statusClass(tone)}`}>

@@ -280,7 +280,7 @@ All settings are environment variables (`.env` is loaded automatically).
 | `PTR_ENRICHMENT_ENABLED` | `true` | Reverse-resolve sending IPs and forward-confirm their PTR names. |
 | `HELO_HOSTNAME` | — | Expected outbound EHLO/HELO FQDN for the DNS readiness check; does not configure Stalwart. A domain setting can override it. |
 | `JOBS_INITIAL_DELAY_SECONDS` | `25` | Delay before the first scheduled run after boot. |
-| `BACKUP_KEEP` | `14` | Local snapshots retained by `app.cli backup`. |
+| `BACKUP_KEEP` | `14` | Local snapshots and `.tar.gz` bundles retained by backup/fetch. |
 | `BACKUP_ENABLED` | `false` | Schedule local backups and off-box uploads. |
 | `BACKUP_INTERVAL_HOURS` | `24` | Backup job cadence. |
 | `BACKUP_WEBDAV_URL` | — | Existing WebDAV folder for off-box bundles. |
@@ -290,6 +290,7 @@ All settings are environment variables (`.env` is loaded automatically).
 | `BACKUP_S3_ACCESS_KEY` / `BACKUP_S3_SECRET_KEY` | — | S3 credentials; omit to use the instance role/default chain. |
 | `BACKUP_S3_PREFIX` | `dmarcview/` | Object-key prefix. |
 | `RETENTION_DAYS` | `0` | Archive raw payloads and prune reports older than this. `0` keeps forever. |
+| `AUDIT_RETENTION_DAYS` | `0` | Prune audit-log rows older than this. `0` keeps forever. |
 | `ALERTS_ENABLED` | `true` | Run the alert evaluator on a schedule. |
 | `ALERT_INTERVAL_MINUTES` | `60` | Alert evaluation cadence. |
 | `ALERT_COOLDOWN_MINUTES` | `60` | Minimum gap between repeated episodes of one finding. |
@@ -485,7 +486,8 @@ history, report-quality scores, delivery diagnostics/digest controls and an audi
 added JMAP email submission; v1.14 added network checks (sending-IP FCrDNS, MX PTR, MTA-STS MX
 consistency, HELO/EHLO DNS and CAA); v1.15 added regression/job alerts and per-domain HELO;
 v1.16 adds scheduled WebDAV/S3 off-box backups; v1.17 adds backup checksum verification, stale
-alerts, manual backup, audit events and archive restore. No mandatory roadmap work remains; MFA
+alerts, manual backup, audit events and archive restore; v1.18 adds remote fetch/restore,
+backup target tests and audit-log retention. No mandatory roadmap work remains; MFA
 and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
@@ -494,7 +496,7 @@ and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (135 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (145 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -519,12 +521,17 @@ The **Domain health** card is computed from live DNS, not from report contents:
 | SPF | recursive includes, **≤10 DNS lookups**, ≤2 void lookups, terminal `all` |
 | DKIM | a key for every configured **and report-discovered** selector, key type/size; date-based rotation selectors are expanded around today |
 | MX | hosts resolve; PTR names checked against each address; null MX is understood |
-| MTA-STS | `_mta-sts` TXT with an id, policy fetched over HTTPS, mode/mx/max_age, policy MX matches DNS MX |
+| MTA-STS | `_mta-sts` TXT with an id, policy fetched over HTTPS, mode/mx/max_age, policy MX matches DNS MX; testing-mode advice uses the latest MX certificate probes |
 | TLS-RPT | `_smtp._tls` TXT and `rua` |
 | DNSSEC | DS present and validated (AD flag from the resolver) |
-| BIMI | `default._bimi`, logo reachable — presence only, no VMC verification |
+| BIMI | `default._bimi`, logo reachable — presence only, no VMC verification; the card warns when DMARC is not enforced |
 | CAA | optional CAA policy with `issue`/`issuewild` rules |
+| DANE | derived from MX TLSA probes; distinguishes `match`, `mismatch` and `unvalidated` |
 | HELO/EHLO DNS | optional expected `HELO_HOSTNAME` FQDN, forward DNS and forward-confirmed PTR |
+
+The **Next** line above the check cards picks the most urgent failing/warn result and shows its
+remediation. The all-domains view shows the first domain needing attention. Check cards link to
+senders or TLS reports where those views help.
 
 Selectors cannot be enumerated through DNS, and Stalwart rotates them on a date template
 (`v1-ed25519-20260101`). DMARCView learns the real ones from the `auth_results/dkim/selector`
@@ -534,8 +541,9 @@ selectors remain available for keys no report has seen yet.
 
 **Transport probes** then connect to the MX hosts on port 25 (and any `host:port` targets you
 add for submission/IMAP/HTTPS): EHLO, STARTTLS, certificate chain and hostname verification,
-expiry, TLS version/cipher, and DANE/TLSA matching. No authentication is attempted and no
-message is ever sent. If a network blocks outbound port 25 the probe is reported as a
+expiry, TLS version/cipher, and DANE/TLSA matching. A TLSA record that cannot be tied to a
+DNSSEC-validated response is reported as **DANE unvalidated**, not as a match. No authentication
+is attempted and no message is ever sent. If a network blocks outbound port 25 the probe is reported as a
 failure with the connection error — DNS checks are unaffected.
 
 ### Testing outbound HELO/EHLO
@@ -579,7 +587,7 @@ The **Alerts** page evaluates thirteen rules over the reports, health snapshots 
 | Health check regression | a check moves from healthy to warning/failure between snapshots |
 | JMAP sync failing | two consecutive scheduled JMAP syncs fail or finish partially (global rule) |
 | Scheduled job failing | a scheduled health-check, probe or backup run reports errors (global rule) |
-| Off-box backup stale | no successful off-box backup within the configured maximum age (global rule) |
+| Off-box backup stale | no successful off-box backup within the configured age (at least 2× `BACKUP_INTERVAL_HOURS`; global rule) |
 
 Evaluation runs hourly and on demand. Incidents are deduplicated while open, repeated
 episodes are suppressed by a cooldown, and a resolution notice is sent when the condition
@@ -677,15 +685,27 @@ Manual run:
 ```bash
 python -m app.cli backup --offsite          # local snapshot + upload
 python -m app.cli backup --bundle           # keep a local .tar.gz bundle
+python -m app.cli backup --verify PATH      # verify a snapshot or bundle
 ```
 
-Use **Back up now** in Ingestion → Storage for the same operation from the UI. Manual and
-scheduled runs are recorded in the audit log as `backup.run`, `backup.local` or
-`backup.failed`.
+Use **Back up now** in Ingestion → Storage for the same operation from the UI; **Test** checks
+that the configured targets accept reads and writes. Manual and scheduled runs are recorded in
+the audit log as `backup.run`, `backup.local` or `backup.failed`.
+
+Fetch and restore the latest remote bundle without manually downloading it:
+
+```bash
+python -m app.cli fetch --target webdav
+python -m app.cli restore --remote --target webdav --with-archive --yes
+```
+
+Use `--target s3` when both targets are configured. Fetch verifies the `.sha256` sidecar before
+returning the bundle.
 
 The bundle contains the SQLite snapshot and the archive directory. The app writes a
 `.sha256` sidecar next to each bundle and verifies the remote size/checksum after upload.
-Remote retention is left to the provider; the app only rotates local `BACKUP_KEEP` snapshots.
+Fetch verifies the sidecar before downloading a bundle; **Test** checks target reads and writes.
+Remote retention is left to the provider; the app only rotates local `BACKUP_KEEP` snapshots and bundles.
 
 Restore from either a local snapshot or a downloaded bundle:
 
@@ -740,7 +760,8 @@ delete remote objects.
 2. Verify the checksum locally with `sha256sum -c` (the sidecar uses the standard
    `<hash>  <filename>` format).
 3. Stop the web container.
-4. Run `python -m app.cli restore <bundle> --with-archive --yes`.
+4. Run `python -m app.cli restore <bundle> --with-archive --yes`, or use
+   `python -m app.cli restore --remote --target <target> --with-archive --yes`.
 5. Start the container and confirm the version, Reports count and a sample report opening.
 6. Run `python -m app.cli backup --offsite` once to confirm uploads still work after the
    restore.
@@ -758,7 +779,10 @@ python -m app.cli prune --days 365 --yes
 
 The dry run reports the report/row counts and bytes it would archive. Actual deletion requires
 `--yes`. Processed-message dedupe keys are kept, so a pruned message is not re-imported. Local
-archives are not part of `app.cli backup`; include `data/archive/` in any off-box backup.
+archives are not part of the database snapshot; they are included in off-box bundles.
+
+Set `AUDIT_RETENTION_DAYS` to prune old audit-log rows. The daily retention job runs when either
+`RETENTION_DAYS` or `AUDIT_RETENTION_DAYS` is enabled; `0` keeps audit events forever.
 
 ## Security notes
 

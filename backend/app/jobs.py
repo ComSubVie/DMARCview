@@ -36,8 +36,8 @@ from .models import (
     utcnow,
 )
 from .digest import send_digest
-from .offsite import targets as offsite_targets, upload_bundle
-from .retention import prune
+from .offsite import redact_error, targets as offsite_targets, upload_bundle
+from .retention import prune, prune_audit
 
 log = logging.getLogger(__name__)
 
@@ -120,10 +120,15 @@ async def job_transport_probes() -> dict:
 
 async def job_retention() -> dict:
     settings = get_settings()
-    if settings.retention_days <= 0:
+    if settings.retention_days <= 0 and settings.audit_retention_days <= 0:
         return {"skipped": "disabled"}
+    result: dict = {}
     with Session(get_engine()) as session:
-        return prune(session, settings.retention_days)
+        if settings.retention_days > 0:
+            result = prune(session, settings.retention_days)
+        if settings.audit_retention_days > 0:
+            result["audit"] = prune_audit(session, settings.audit_retention_days)
+    return result
 
 
 BACKUP_LAST_KEY = "backup.last_offsite_at"
@@ -181,11 +186,12 @@ async def job_backup(*, force: bool = False, actor: str = "scheduler") -> dict:
             _audit_backup("backup.run", actor, result)
             return result
         except Exception as exc:
-            _set_backup_state(None, str(exc))
+            error = redact_error(str(exc))
+            _set_backup_state(None, error)
             _audit_backup(
                 "backup.failed",
                 actor,
-                {"snapshot": snapshot.name, "bundle": bundle.name, "error": str(exc)[:1000]},
+                {"snapshot": snapshot.name, "bundle": bundle.name, "error": error},
             )
             raise
         finally:
@@ -445,7 +451,7 @@ def job_specs() -> list[JobSpec]:
                     initial_delay=180,
                 )
             ]
-            if settings.retention_days > 0
+            if settings.retention_days > 0 or settings.audit_retention_days > 0
             else []
         ),
         *(

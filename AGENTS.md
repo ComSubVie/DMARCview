@@ -119,9 +119,10 @@ snapshot and replaces the live SQLite file; stop the web process first. Archives
 **Known-sender expectations suppress noise, not evidence.** `source_expectations` only skips
 new-source *findings*; it never hides reports, sources or history.
 
-**Audit events are append-only and must not contain secrets.** `app/audit.py` records admin
-actions; never include passwords, tokens, raw report contents or alert-channel credentials in
-`detail`.
+**Audit events are append-only while retained and must not contain secrets.** `app/audit.py`
+records admin actions; never include passwords, tokens, raw report contents or alert-channel
+credentials in `detail`. Optional `AUDIT_RETENTION_DAYS` prunes old rows; it is not a backdoor
+for normal editing.
 
 **Per-domain alert overrides are layered over global rules.** Preserve dedupe/resolution
 semantics; disabling an override must resolve open events, not leave them stale.
@@ -231,7 +232,7 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
 the user asks for them. Export, fleet comparison, retention, DMARCbis and decision support are
-delivered, including v1.17 backup verification and restore. No mandatory roadmap work remains. MFA stays
+delivered, including v1.18 remote backup fetch/restore and audit retention. No mandatory roadmap work remains. MFA stays
 parked; RUF and platform work remain optional/trigger-based.
 
 ## Security expectations

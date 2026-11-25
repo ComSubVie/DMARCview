@@ -108,6 +108,7 @@ class Settings:
     backup_s3_prefix: str = "dmarcview/"
     backup_s3_path_style: bool = True
     retention_days: int = 0  # 0 = keep forever
+    audit_retention_days: int = 0  # 0 = keep audit events forever
     digest_enabled: bool = False
     digest_to: str = ""
     digest_days: int = 7

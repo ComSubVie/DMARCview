@@ -11,7 +11,7 @@ from sqlalchemy import delete
 from sqlmodel import Session, select
 
 from .config import get_settings
-from .models import Domain, Report, SourceRecord, TlsFailure, TlsPolicy, TlsReport, utcnow
+from .models import AuditEvent, Domain, Report, SourceRecord, TlsFailure, TlsPolicy, TlsReport, utcnow
 
 BATCH = 400
 T = TypeVar("T")
@@ -44,6 +44,20 @@ def _archive_path(
 ) -> Path:
     folder = root / f"{day.year:04d}" / f"{day.month:02d}"
     return folder / f"{prefix}-{_safe(domain)}-{_safe(report_id)}-{row_id}.{suffix}"
+
+
+def prune_audit(
+    session: Session,
+    days: int,
+    *,
+    now: Optional[datetime] = None,
+) -> dict[str, Any]:
+    if days <= 0:
+        return {"enabled": False, "days": 0, "deleted": 0}
+    cutoff = (now or utcnow()) - timedelta(days=days)
+    result = session.exec(delete(AuditEvent).where(AuditEvent.at < cutoff))
+    session.commit()
+    return {"enabled": True, "days": days, "deleted": int(getattr(result, "rowcount", 0) or 0)}
 
 
 def prune(

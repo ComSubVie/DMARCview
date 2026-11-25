@@ -21,7 +21,9 @@ from app.health.dns import BaseDnsClient, Lookup
 from app.health.engine import run_health
 from app.health.http import BaseFetcher, FetchResult
 from app.health.probe import (
+    ProbeOutcome,
     ProbeSpec,
+    _dane_status,
     _hostname_matches,
     _inspect,
     probe_sync,
@@ -30,7 +32,7 @@ from app.health.probe import (
     verification_context,
 )
 from app.health.selectors import build_candidates
-from app.health.service import discover_dkim_selectors, store_report
+from app.health.service import _annotate_results, discover_dkim_selectors, store_report
 from app.health.types import HealthReport, Status
 from app.models import Domain, Report, SourceRecord
 
@@ -275,6 +277,8 @@ async def test_spf_lookup_limit_fails():
     spf = next(result for result in report.results if result.key == "spf")
     assert spf.status is Status.FAIL
     assert "DNS lookups" in spf.summary
+    assert "Flatten or remove" in (spf.remediation or "")
+    assert "include:" in (spf.remediation or "")
 
 
 @pytest.mark.asyncio
@@ -785,3 +789,160 @@ def test_api_manual_backup_endpoint(auth_client, monkeypatch):
     body = response.json()
     assert body["ok"] is True
     assert body["providers"] == ["webdav"]
+
+
+def test_mta_sts_remediation_uses_mx_certificate_probes():
+    from app.health.service import _annotate_mta_sts
+
+    result = {
+        "key": "mta_sts",
+        "status": "warn",
+        "evidence": {"mx": ["mail.example"]},
+        "details": [],
+        "remediation": "Switch to mode: enforce once every MX host presents a valid certificate.",
+    }
+    _annotate_mta_sts(
+        result,
+        [{"host": "mail.example", "port": 25, "status": "pass", "checked_at": "2026-01-01T00:00:00Z"}],
+    )
+    assert "All policy MX hosts present valid certificates" in result["remediation"]
+    assert "switch to mode: enforce" in result["remediation"]
+    assert any("certificate probes checked" in detail for detail in result["details"])
+
+    result["remediation"] = "Switch to mode: enforce once every MX host presents a valid certificate."
+    _annotate_mta_sts(result, [])
+    assert "have not checked" in result["remediation"]
+
+    result["remediation"] = "Switch to mode: enforce once every MX host presents a valid certificate."
+    _annotate_mta_sts(result, [{"host": "mail.example", "port": 25, "status": "warn"}])
+    assert "do not present a valid certificate" in result["remediation"]
+
+
+@pytest.mark.asyncio
+async def test_dane_distinguishes_unvalidated_dnssec():
+    digest = "ab" * 32
+
+    class Dns:
+        def __init__(self, ad):
+            self.ad = ad
+
+        async def tlsa(self, host, port):
+            return Lookup(values=(f"3 0 1 {digest}",), ad=self.ad)
+
+    outcome = ProbeOutcome(host="mail.example", port=25, mode="smtp", details={"der_sha256": digest})
+    status, detail = await _dane_status(Dns(False), ProbeSpec("mail.example"), outcome)
+    assert status == "unvalidated"
+    assert "DNSSEC" in detail
+
+    outcome = ProbeOutcome(host="mail.example", port=25, mode="smtp", details={"der_sha256": digest})
+    status, _detail = await _dane_status(Dns(True), ProbeSpec("mail.example"), outcome)
+    assert status == "match"
+
+
+def test_bimi_requires_dmarc_enforcement():
+    results = [
+        {"key": "dmarc", "evidence": {"p": "none"}},
+        {"key": "bimi", "status": "pass", "summary": "logo published", "details": []},
+    ]
+    annotated = _annotate_results(results, [])
+    bimi = next(item for item in annotated if item["key"] == "bimi")
+    assert bimi["status"] == "warn"
+    assert "DMARC is p=none" in bimi["summary"]
+    assert "p=quarantine or p=reject" in bimi["remediation"]
+
+    results[0]["evidence"]["p"] = "reject"
+    annotated = _annotate_results(results, [])
+    bimi = next(item for item in annotated if item["key"] == "bimi")
+    assert bimi["status"] == "pass"
+    assert any("supports BIMI" in detail for detail in bimi["details"])
+
+
+@pytest.mark.asyncio
+async def test_health_persists_bimi_dmarc_warning(session: Session, monkeypatch):
+    from app.health.service import health_payload, run_and_store_health
+    from app.health.types import CheckResult, HealthReport
+    from app.models import Domain
+
+    domain = Domain(name="bimi.example")
+    session.add(domain)
+    session.commit()
+    session.refresh(domain)
+
+    async def fake_run(*args, **kwargs):
+        return HealthReport(
+            domain=domain.name,
+            checked_at=datetime.now(timezone.utc),
+            overall="pass",
+            score=1.0,
+            core_passed=4,
+            core_total=4,
+            results=[
+                CheckResult(
+                    key="dmarc",
+                    label="DMARC",
+                    status=Status.PASS,
+                    summary="p=none",
+                    core=True,
+                    evidence={"p": "none"},
+                ),
+                CheckResult(
+                    key="bimi",
+                    label="BIMI",
+                    status=Status.PASS,
+                    summary="logo published",
+                ),
+            ],
+        )
+
+    monkeypatch.setattr("app.health.service.run_health", fake_run)
+    await run_and_store_health(session, domain)
+    bimi = next(
+        item for item in health_payload(session, domain)["results"] if item["key"] == "bimi"
+    )
+    assert bimi["status"] == "warn"
+    assert "DMARC is p=none" in bimi["summary"]
+
+
+def test_dane_result_surfaces_unvalidated():
+    from app.health.service import _dane_result
+
+    result = _dane_result(
+        [{"host": "mail.example", "port": 25, "dane_status": "unvalidated"}]
+    )
+    assert result is not None
+    assert result["status"] == "warn"
+    assert "DNSSEC" in result["summary"]
+
+
+def test_fleet_health_exposes_next_action(session: Session):
+    from app.health.service import fleet_health
+    from app.models import Domain, DomainHealthSnapshot
+
+    domain = Domain(name="fleet.example")
+    session.add(domain)
+    session.commit()
+    session.refresh(domain)
+    session.add(
+        DomainHealthSnapshot(
+            domain_id=domain.id,
+            checked_at=datetime.now(timezone.utc),
+            overall="warn",
+            score=0.75,
+            core_passed=3,
+            core_total=4,
+            results=[
+                {
+                    "key": "spf",
+                    "label": "SPF",
+                    "status": "warn",
+                    "summary": "no strong all",
+                    "remediation": "End the record with -all.",
+                    "details": [],
+                }
+            ],
+        )
+    )
+    session.commit()
+    item = next(row for row in fleet_health(session) if row["domain"] == "fleet.example")
+    assert item["next_action"]["label"] == "SPF"
+    assert "-all" in item["next_action"]["remediation"]

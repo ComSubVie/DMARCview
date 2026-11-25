@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 
 from .. import audit
 from ..config import get_settings
-from ..db import get_session
+from ..db import get_engine, get_session
 from ..deps import current_user
 from ..dnsdiff import build_dns_diff
 from ..health.service import (
@@ -34,7 +34,7 @@ from ..models import (
     SyncState,
     TlsReport,
 )
-from ..offsite import targets as offsite_targets
+from ..offsite import targets as offsite_targets, test_targets
 
 router = APIRouter(prefix="/api", tags=["health"], dependencies=[Depends(current_user)])
 
@@ -154,6 +154,23 @@ def write_domain_settings(
     audit.record(session, "domain.settings", actor=audit.actor(request), domain=row.name, target=row.name)
     session.commit()
     return serialise_settings(session, row)
+
+
+@router.post("/backup/test")
+async def test_backup(request: Request) -> dict:
+    try:
+        results = await test_targets(get_settings())
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)[:500]) from exc
+    with Session(get_engine()) as session:
+        audit.record(
+            session,
+            "backup.test",
+            actor=audit.actor(request),
+            detail={"results": results},
+        )
+        session.commit()
+    return {"ok": all(item.get("ok") for item in results), "results": results}
 
 
 @router.post("/backup/run")

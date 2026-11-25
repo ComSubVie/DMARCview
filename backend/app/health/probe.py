@@ -320,6 +320,8 @@ async def _dane_status(dns: BaseDnsClient, spec: ProbeSpec, outcome: ProbeOutcom
     records = [value for value in lookup.values if value.strip()]
     if not records:
         return "none", ""
+    if not lookup.ad:
+        return "unvalidated", "TLSA records present but DNSSEC was not validated by the resolver"
 
     der_sha = outcome.details.get("der_sha256")
     spki_sha = outcome.details.get("spki_sha256")

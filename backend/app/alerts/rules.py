@@ -506,7 +506,7 @@ def backup_stale(session: Session, domain: Domain | None, cond: dict, now: datet
         last = last.replace(tzinfo=timezone.utc)
     age = now - last.astimezone(timezone.utc)
     hours = age.total_seconds() / 3600
-    threshold = int(cond.get("hours", 48))
+    threshold = max(int(cond.get("hours", 48)), settings.backup_interval_hours * 2)
     if hours <= threshold:
         return []
     return [

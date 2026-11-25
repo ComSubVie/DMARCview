@@ -20,11 +20,11 @@ from pathlib import Path
 
 from sqlmodel import Session, func, select
 
-from .backup import BackupError, backup_database, create_bundle, restore_database
+from .backup import BackupError, backup_database, create_bundle, prune_bundles, restore_database, verify_backup
 from .config import get_settings
 from .db import get_engine, init_db
 from .geoip import get_geo_resolver
-from .offsite import OffsiteError, upload_bundle
+from .offsite import OffsiteError, fetch_latest, upload_bundle
 from .ingest.dmarc import DmarcParseError, parse_dmarc
 from .ingest.jmap import JMAPClient
 from .ingest.mime import MimeParseError, extract_payloads
@@ -233,18 +233,53 @@ def cmd_mailbox_debug(args: argparse.Namespace) -> int:
     return 0
 
 
+def _remote_bundle(args: argparse.Namespace) -> Path:
+    settings = get_settings()
+    result = asyncio.run(
+        fetch_latest(
+            settings,
+            target=args.target,
+            name=args.name,
+            dest_dir=Path(args.destination) if getattr(args, "destination", None) else None,
+        )
+    )
+    print(f"downloaded {result['provider']} bundle {result['path']}")
+    return Path(result["path"])
+
+
 def cmd_restore(args: argparse.Namespace) -> int:
     if not args.yes:
         print("refusing to restore without --yes (stop the app first)", file=sys.stderr)
         return 1
     try:
-        safety = restore_database(Path(args.snapshot), with_archive=args.with_archive)
-    except BackupError as exc:
+        snapshot = _remote_bundle(args) if args.remote else Path(args.snapshot or "")
+        if args.remote and not snapshot:
+            raise BackupError("no remote bundle selected")
+        safety = restore_database(snapshot, with_archive=args.with_archive)
+    except (BackupError, OffsiteError) as exc:
         print(f"restore failed: {exc}", file=sys.stderr)
         return 1
     if safety and safety != Path():
         print(f"safety backup: {safety}")
-    print(f"restored {args.snapshot}")
+    print(f"restored {snapshot}")
+    return 0
+
+
+def cmd_fetch(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    try:
+        result = asyncio.run(
+            fetch_latest(
+                settings,
+                target=args.target,
+                name=args.name,
+                dest_dir=Path(args.destination) if args.destination else None,
+            )
+        )
+    except OffsiteError as exc:
+        print(f"fetch failed: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2))
     return 0
 
 
@@ -310,6 +345,14 @@ def cmd_migrate(_args: argparse.Namespace) -> int:
 
 
 def cmd_backup(args: argparse.Namespace) -> int:
+    if args.verify:
+        try:
+            result = verify_backup(Path(args.verify))
+        except BackupError as exc:
+            print(f"verify failed: {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(result, indent=2))
+        return 0
     try:
         target = backup_database(
             dest_dir=Path(args.destination) if args.destination else None,
@@ -323,6 +366,7 @@ def cmd_backup(args: argparse.Namespace) -> int:
         return 0
     settings = get_settings()
     bundle = create_bundle(target, settings.data_dir / "archive", target.parent)
+    prune_bundles(bundle.parent, settings.backup_keep)
     print(f"bundle written to {bundle}")
     if args.offsite:
         try:
@@ -449,16 +493,27 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_migrate)
 
     p = sub.add_parser("restore", help="restore a snapshot or bundle (requires --yes)")
-    p.add_argument("snapshot", help="path to a dmarc-*.db or dmarc-*.tar.gz")
+    p.add_argument("snapshot", nargs="?", help="path to a dmarc-*.db or dmarc-*.tar.gz")
+    p.add_argument("--remote", action="store_true", help="download the selected remote bundle first")
+    p.add_argument("--target", choices=["webdav", "s3"], help="remote backup target")
+    p.add_argument("--name", help="remote bundle filename (default: latest)")
+    p.add_argument("--destination", help="where to save a downloaded bundle")
     p.add_argument("--yes", action="store_true", help="confirm the restore")
     p.add_argument("--with-archive", action="store_true", help="also extract archive/ from a bundle")
     p.set_defaults(func=cmd_restore)
+
+    p = sub.add_parser("fetch", help="download the latest off-box bundle")
+    p.add_argument("--target", choices=["webdav", "s3"], help="remote backup target")
+    p.add_argument("--name", help="bundle filename (default: latest)")
+    p.add_argument("--destination", help="destination directory")
+    p.set_defaults(func=cmd_fetch)
 
     p = sub.add_parser("backup", help="write a consistent SQLite backup")
     p.add_argument("--destination", help="directory for the snapshot")
     p.add_argument("--keep", type=int, default=None, help="number of snapshots to keep")
     p.add_argument("--bundle", action="store_true", help="keep a .tar.gz with the database and archive")
     p.add_argument("--offsite", action="store_true", help="upload the bundle to configured off-box targets")
+    p.add_argument("--verify", metavar="PATH", help="verify a snapshot or bundle instead of creating one")
     p.set_defaults(func=cmd_backup)
 
     p = sub.add_parser("prune", help="archive and delete reports older than RETENTION_DAYS")

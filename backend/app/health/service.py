@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable, Optional
@@ -120,7 +121,61 @@ def reported_policy(session: Session, domain_id: int) -> dict[str, Any]:
     }
 
 
-def store_report(session: Session, domain_id: int, report: HealthReport) -> DomainHealthSnapshot:
+def _dane_result(probes: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    relevant = [
+        probe
+        for probe in probes
+        if int(probe.get("port") or 0) == 25
+        and probe.get("dane_status") in {"match", "mismatch", "unvalidated"}
+    ]
+    if not relevant:
+        return None
+    statuses = {str(probe.get("dane_status")) for probe in relevant}
+    if "mismatch" in statuses:
+        status = "fail"
+        summary = "TLSA records present but none matched the presented certificate"
+        remediation = "Fix the TLSA record or the certificate before relying on DANE."
+    elif "unvalidated" in statuses:
+        status = "warn"
+        summary = "TLSA records found but DNSSEC was not validated"
+        remediation = "Use a validating resolver before trusting DANE; an unvalidated TLSA answer is not authenticated."
+    else:
+        status = "pass"
+        summary = f"DANE validated on {len(relevant)} MX host(s)"
+        remediation = None
+    details = [
+        f"{probe.get('host')}: {probe.get('dane_status')}"
+        for probe in relevant[:8]
+    ]
+    return {
+        "key": "dane",
+        "label": "DANE",
+        "status": status,
+        "summary": summary,
+        "details": details,
+        "remediation": remediation,
+        "core": False,
+        "evidence": {"hosts": [probe.get("host") for probe in relevant]},
+        "duration_ms": 0,
+    }
+
+
+def _results_with_context(
+    results: list[dict[str, Any]], probes: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    augmented = [item for item in _annotate_results(results, probes) if item.get("key") != "dane"]
+    dane = _dane_result(probes)
+    if dane is not None:
+        augmented.append(dane)
+    return augmented
+
+
+def store_report(
+    session: Session,
+    domain_id: int,
+    report: HealthReport,
+    results: Optional[list[dict[str, Any]]] = None,
+) -> DomainHealthSnapshot:
     checked_at = report.checked_at
     if checked_at.tzinfo is None:
         checked_at = checked_at.replace(tzinfo=timezone.utc)
@@ -131,7 +186,7 @@ def store_report(session: Session, domain_id: int, report: HealthReport) -> Doma
         score=report.score,
         core_passed=report.core_passed,
         core_total=report.core_total,
-        results=[result.as_dict() for result in report.results],
+        results=results if results is not None else [result.as_dict() for result in report.results],
         duration_ms=report.duration_ms,
         error=report.error,
     )
@@ -188,7 +243,13 @@ async def run_and_store_health(
         http_timeout=get_settings().http_timeout_seconds,
         helo_hostname=settings_row.helo_hostname or get_settings().helo_hostname,
     )
-    snapshot = store_report(session, domain.id, report)
+    probes = [serialise_probe(row) for row in latest_probes(session, domain.id)]
+    snapshot = store_report(
+        session,
+        domain.id,
+        report,
+        results=_results_with_context([result.as_dict() for result in report.results], probes),
+    )
     return serialise_snapshot(snapshot)
 
 
@@ -313,6 +374,88 @@ async def run_and_store_probes(
     return [serialise_probe(row) for row in rows]
 
 
+def _annotate_mta_sts(result: dict[str, Any], probes: list[dict[str, Any]]) -> None:
+    """Make the MTA-STS enforcement advice depend on the latest MX probes."""
+    if result.get("key") != "mta_sts":
+        return
+    evidence = result.get("evidence") or {}
+    if str(evidence.get("mode") or "").lower() == "enforce":
+        return
+    if "switch to mode: enforce" not in str(result.get("remediation") or "").lower():
+        return
+    hosts = [str(host).lower().rstrip(".") for host in evidence.get("mx") or []]
+    if not hosts:
+        return
+    mx_probes = {
+        str(probe.get("host", "")).lower().rstrip("."): probe
+        for probe in probes
+        if int(probe.get("port") or 0) == 25
+    }
+    missing = [host for host in hosts if host not in mx_probes]
+    invalid = [
+        host
+        for host in hosts
+        if host in mx_probes and mx_probes[host].get("status") != "pass"
+    ]
+    check_times = [
+        str(probe.get("checked_at"))
+        for probe in mx_probes.values()
+        if probe.get("checked_at")
+    ]
+    details = list(result.get("details") or [])
+    if check_times:
+        details.append("certificate probes checked " + max(check_times))
+    if missing:
+        result["remediation"] = (
+            "Transport probes have not checked "
+            + ", ".join(missing[:3])
+            + ("…" if len(missing) > 3 else "")
+            + ". Run transport probes before switching to mode: enforce."
+        )
+        details.append("certificate check pending for: " + ", ".join(missing[:5]))
+    elif invalid:
+        result["remediation"] = (
+            f"{len(invalid)} of {len(hosts)} policy MX host(s) do not present a valid certificate yet "
+            "or are inside the certificate warning window. Keep mode: testing until all pass."
+        )
+        details.append("certificate issues: " + ", ".join(invalid[:5]))
+    else:
+        result["remediation"] = (
+            "All policy MX hosts present valid certificates in the latest transport probes; "
+            "switch to mode: enforce."
+        )
+        details.append("certificate probes: all policy MX hosts pass")
+    result["details"] = details
+
+
+def _annotate_bimi(result: dict[str, Any], dmarc: dict[str, Any] | None) -> None:
+    """BIMI only displays when DMARC enforces; make that explicit."""
+    if result.get("key") != "bimi" or result.get("status") != "pass":
+        return
+    policy = str(((dmarc or {}).get("evidence") or {}).get("p") or "").lower()
+    details = list(result.get("details") or [])
+    if policy in {"quarantine", "reject"}:
+        details.append(f"DMARC p={policy} supports BIMI")
+    else:
+        result["status"] = "warn"
+        result["summary"] = f"logo published, but DMARC is p={policy or 'not published'}"
+        result["remediation"] = (
+            "BIMI generally requires DMARC enforcement. Move DMARC to p=quarantine or p=reject "
+            "before expecting the logo to display."
+        )
+        details.append("BIMI requires DMARC enforcement")
+    result["details"] = details
+
+
+def _annotate_results(results: list[dict[str, Any]], probes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    annotated = copy.deepcopy(results)
+    dmarc = next((item for item in annotated if item.get("key") == "dmarc"), None)
+    for result in annotated:
+        _annotate_mta_sts(result, probes)
+        _annotate_bimi(result, dmarc)
+    return annotated
+
+
 def health_payload(session: Session, domain: Domain) -> dict[str, Any]:
     snapshot = latest_snapshot(session, domain.id)
     probes = [serialise_probe(row) for row in latest_probes(session, domain.id)]
@@ -340,7 +483,7 @@ def health_payload(session: Session, domain: Domain) -> dict[str, Any]:
         "core_passed": snapshot.core_passed if snapshot else 0,
         "core_total": snapshot.core_total if snapshot else 0,
         "stale": serialise_snapshot(snapshot)["stale"] if snapshot else True,
-        "results": snapshot.results if snapshot else [],
+        "results": _results_with_context(snapshot.results, probes) if snapshot else [],
         "duration_ms": snapshot.duration_ms if snapshot else 0,
         "error": snapshot.error if snapshot else None,
         "probes": probes,
@@ -351,6 +494,23 @@ def health_payload(session: Session, domain: Domain) -> dict[str, Any]:
         ],
         "history": history,
         "checked": snapshot is not None,
+    }
+
+
+def _fleet_next_action(results: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    candidates = [
+        result
+        for result in results
+        if result.get("status") in {"fail", "warn"} and (result.get("remediation") or result.get("summary"))
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda result: 0 if result.get("status") == "fail" else 1)
+    first = candidates[0]
+    return {
+        "status": first.get("status"),
+        "label": first.get("label"),
+        "remediation": first.get("remediation") or first.get("summary"),
     }
 
 
@@ -365,6 +525,8 @@ def fleet_health(session: Session) -> list[dict[str, Any]]:
             .limit(1)
         ).first()
         probes = latest_probes(session, domain.id)
+        probe_payloads = [serialise_probe(probe) for probe in probes]
+        results = _results_with_context(row.results, probe_payloads) if row else []
         failing_probes = sum(1 for probe in probes if probe.status == "fail")
         out.append(
             {
@@ -382,6 +544,7 @@ def fleet_health(session: Session) -> list[dict[str, Any]]:
                     (probe.days_left for probe in probes if probe.days_left is not None),
                     default=None,
                 ),
+                "next_action": _fleet_next_action(results),
             }
         )
     return out

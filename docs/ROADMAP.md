@@ -1,13 +1,13 @@
 # Roadmap
 
-_Rev 27 · 25 November 2026 · backup verification and restore (v1.17)_
+_Rev 28 · 25 November 2026 · remote restore and retention (v1.18)_
 
 DMARCView began as a self-hosted answer to **“what happened?”** and grew into a complete
 reporting and operations dashboard: **“is my configuration correct?”**, **“tell me when it
 changes”**, **“why did it change?”**, **“what should I do next?”**, and now **“can I prove what
 changed and who changed it?”**.
 
-**Current development release: v1.17.0.** The mandatory roadmap is complete. What remains is
+**Current development release: v1.18.0.** The mandatory roadmap is complete. What remains is
 optional, trigger-based or deliberately parked work.
 
 ## Delivered
@@ -25,6 +25,7 @@ optional, trigger-based or deliberately parked work.
 
 ## Recent releases
 
+- **v1.18 — remote restore, retention and contextual health.** Fetch/verify/restore remote bundles, test backup targets, prune audit rows, and add BIMI/DANE/SPF-aware advice, a fleet Next action and check deep links.
 - **v1.17 — backup verification and restore.** Remote checksum verification, stale-backup alerts, a Back up now action, backup audit events and archive extraction on restore.
 - **v1.16 — off-box backups.** Scheduled or manual local snapshots bundled with the raw archive and uploaded to WebDAV and/or S3-compatible storage.
 - **v1.15 — alert coverage and per-domain HELO.** Health-check regression, global JMAP-sync and health/probe-job alerts, domain-specific HELO/EHLO hostnames, and clearer HELO DNS-versus-outbound wording.
@@ -45,7 +46,7 @@ optional, trigger-based or deliberately parked work.
 
 ## Current status
 
-- **Tests:** 135 backend tests, plus the frontend type/build check in CI.
+- **Tests:** 145 backend tests, plus the frontend type/build check in CI.
 - **Schema:** Alembic `0001` through `0015`; upgrades run automatically on start.
 - **Runtime:** one container, one SQLite database, no Redis/Celery, no telemetry.
 

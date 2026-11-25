@@ -46,6 +46,7 @@ const ICONS: Record<string, LucideIcon> = {
   dnssec: Fingerprint,
   bimi: BadgeCheck,
   caa: Lock,
+  dane: LockKeyhole,
   helo: Mail,
 };
 
