@@ -5,6 +5,31 @@ import { Badge, EmptyState, Skeleton } from "../components/ui";
 import { dateTime, relativeTime } from "../lib/format";
 import type { AuditItem } from "../types";
 
+type BackupTestResult = { provider?: string; ok?: boolean; error?: string };
+
+function backupTestResults(detail: Record<string, unknown>): BackupTestResult[] {
+  return Array.isArray(detail.results) ? (detail.results as BackupTestResult[]) : [];
+}
+
+function detailSummary(item: AuditItem): string {
+  const detail = item.detail ?? {};
+  if (item.action === "backup.test") {
+    const results = backupTestResults(detail);
+    if (results.length === 0) return "no target results";
+    return results
+      .map((result) => `${result.provider ?? "target"} ${result.ok ? "ok" : "failed"}${result.error ? `: ${result.error}` : ""}`)
+      .join(" · ")
+      .slice(0, 180);
+  }
+  if (item.action.startsWith("backup.")) {
+    const providers = Array.isArray(detail.providers) ? detail.providers.join(" + ") : "";
+    const bytes = typeof detail.bytes === "number" ? `${detail.bytes} bytes` : "";
+    const sha = typeof detail.sha256 === "string" ? `sha256 ${detail.sha256.slice(0, 12)}…` : "";
+    return [providers, bytes, sha].filter(Boolean).join(" · ").slice(0, 180) || "—";
+  }
+  return Object.keys(detail).length > 0 ? JSON.stringify(detail).slice(0, 140) : "—";
+}
+
 export function AuditPage() {
   const [items, setItems] = useState<AuditItem[]>([]);
   const [action, setAction] = useState("");
@@ -41,6 +66,10 @@ export function AuditPage() {
     };
   }, [action, domain]);
 
+  const lastBackupTest = items.find((item) => item.action === "backup.test");
+  const lastBackupResults = lastBackupTest ? backupTestResults(lastBackupTest.detail ?? {}) : [];
+  const lastBackupOk = lastBackupResults.length > 0 && lastBackupResults.every((item) => item.ok);
+
   return (
     <div className="fade-in">
       <div className="section-head">
@@ -69,6 +98,19 @@ export function AuditPage() {
           />
         </label>
       </div>
+
+      {lastBackupTest ? (
+        <div className={`callout ${lastBackupOk ? "info" : ""}`} style={{ marginBottom: 14 }}>
+          <ScrollText size={15} style={{ flex: "none", marginTop: 1 }} />
+          <span>
+            Last backup-target test:{" "}
+            {lastBackupResults
+              .map((result) => `${result.provider ?? "target"} ${result.ok ? "ok" : "failed"}`)
+              .join(" · ") || "no results"}{" "}
+            ({relativeTime(lastBackupTest.at)})
+          </span>
+        </div>
+      ) : null}
 
       {error ? <p className="form-error">{error}</p> : null}
       {loading && items.length === 0 ? <Skeleton height={220} /> : null}
@@ -103,10 +145,8 @@ export function AuditPage() {
                     <td className="tiny">{item.actor}</td>
                     <td className="tiny hide-sm">{item.domain ?? "—"}</td>
                     <td className="tiny hide-sm">{item.target ?? "—"}</td>
-                    <td className="tiny muted hide-sm">
-                      {Object.keys(item.detail ?? {}).length > 0
-                        ? JSON.stringify(item.detail).slice(0, 140)
-                        : "—"}
+                    <td className="tiny muted hide-sm" title={JSON.stringify(item.detail ?? {})}>
+                      {detailSummary(item)}
                     </td>
                   </tr>
                 ))}

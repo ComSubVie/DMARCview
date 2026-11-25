@@ -4152,3 +4152,7 @@ table.data td.right {
 .health-next .check-link {
   margin-top: 0;
 }
+
+.health-next + .card {
+  margin-top: 14px;
+}

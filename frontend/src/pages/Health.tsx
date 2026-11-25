@@ -166,19 +166,45 @@ function DmarcbisCard({ result, domain }: { result: HealthCheckResult; domain: s
   );
 }
 
-const CHECK_LINKS: Record<string, { to: string; label: string }> = {
+type CheckLinkSpec = { to: string; label: string; external?: boolean };
+
+const CHECK_LINKS: Record<string, CheckLinkSpec> = {
   dmarc: { to: "/", label: "Open dashboard" },
   spf: { to: "/", label: "View senders" },
   dkim: { to: "/", label: "View senders" },
   tls_rpt: { to: "/tls", label: "Open TLS reports" },
+  mta_sts: {
+    to: "https://www.rfc-editor.org/rfc/rfc8461",
+    label: "MTA-STS docs",
+    external: true,
+  },
+  dane: { to: "https://www.rfc-editor.org/rfc/rfc7672", label: "DANE docs", external: true },
+  caa: { to: "https://www.rfc-editor.org/rfc/rfc8659", label: "CAA docs", external: true },
 };
+
+function CheckLink({ link }: { link: CheckLinkSpec }) {
+  if (link.external) {
+    return (
+      <a className="check-link" href={link.to} target="_blank" rel="noreferrer">
+        {link.label}
+        <ArrowRight size={12} />
+      </a>
+    );
+  }
+  return (
+    <Link className="check-link" to={link.to}>
+      {link.label}
+      <ArrowRight size={12} />
+    </Link>
+  );
+}
 
 function CheckCard({
   result,
   link,
 }: {
   result: HealthCheckResult;
-  link?: { to: string; label: string };
+  link?: CheckLinkSpec;
 }) {
   const meta = statusMeta[result.status];
   return (
@@ -204,12 +230,7 @@ function CheckCard({
           {result.remediation}
         </p>
       ) : null}
-      {link ? (
-        <Link className="check-link" to={link.to}>
-          {link.label}
-          <ArrowRight size={12} />
-        </Link>
-      ) : null}
+      {link ? <CheckLink link={link} /> : null}
     </article>
   );
 }
@@ -729,12 +750,7 @@ export function HealthPage() {
           <Wrench size={15} style={{ flex: "none", marginTop: 1 }} />
           <span>
             <strong>Next:</strong> {next.label} — {next.remediation || next.summary}
-            {CHECK_LINKS[next.key] ? (
-              <Link className="check-link" to={CHECK_LINKS[next.key].to}>
-                {CHECK_LINKS[next.key].label}
-                <ArrowRight size={12} />
-              </Link>
-            ) : null}
+            {CHECK_LINKS[next.key] ? <CheckLink link={CHECK_LINKS[next.key]} /> : null}
           </span>
         </div>
       ) : null}

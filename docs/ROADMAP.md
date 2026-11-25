@@ -1,13 +1,13 @@
 # Roadmap
 
-_Rev 28 · 25 November 2026 · remote restore and retention (v1.18)_
+_Rev 28 · 25 November 2026 · remote restore and retention (v1.18.1)_
 
 DMARCView began as a self-hosted answer to **“what happened?”** and grew into a complete
 reporting and operations dashboard: **“is my configuration correct?”**, **“tell me when it
 changes”**, **“why did it change?”**, **“what should I do next?”**, and now **“can I prove what
 changed and who changed it?”**.
 
-**Current development release: v1.18.0.** The mandatory roadmap is complete. What remains is
+**Current development release: v1.18.1.** The mandatory roadmap is complete. What remains is
 optional, trigger-based or deliberately parked work.
 
 ## Delivered
