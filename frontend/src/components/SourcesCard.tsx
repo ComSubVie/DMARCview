@@ -1,13 +1,145 @@
-import { ChevronDown, ShieldAlert, ShieldCheck } from "lucide-react";
-import { useState } from "react";
-import type { Source } from "../types";
+import { ChevronDown, ChevronRight, ShieldAlert, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { api } from "../api";
+import type { Source, SourceActivity } from "../types";
 import { formatNumber } from "../lib/format";
-import { CheckCell, EmptyState } from "./ui";
+import { Drawer } from "./Drawer";
+import { CheckCell, EmptyState, Skeleton } from "./ui";
 
-function SourceRow({ source }: { source: Source }) {
+function SourceDetailDrawer({
+  ip,
+  domain,
+  days,
+  onClose,
+}: {
+  ip: string;
+  domain: string;
+  days: number;
+  onClose: () => void;
+}) {
+  const [data, setData] = useState<SourceActivity | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .sourceActivity(ip, { domain: domain === "all" ? undefined : domain, days })
+      .then((result) => !cancelled && setData(result))
+      .catch((err) => !cancelled && setError(err instanceof Error ? err.message : "Could not load source records"));
+    return () => {
+      cancelled = true;
+    };
+  }, [ip, domain, days]);
+
+  return (
+    <Drawer title={ip} subtitle="Source evidence by report" onClose={onClose}>
+      {error ? (
+        <EmptyState icon={<ShieldAlert size={20} />} title="Could not load source records">
+          {error}
+        </EmptyState>
+      ) : !data ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          <Skeleton height={80} />
+          <Skeleton height={120} />
+        </div>
+      ) : data.records.length === 0 ? (
+        <EmptyState icon={<ShieldAlert size={20} />} title="No recent records">
+          This IP has no source records in the selected period.
+        </EmptyState>
+      ) : (
+        <div className="source-records">
+          {data.records.map((record) => (
+            <div className="source-record" key={`${record.report_id}-${record.messages}`}>
+              <div className="source-record-head">
+                <strong>{record.org}</strong>
+                <span className="tiny muted">
+                  {record.date} · {formatNumber(record.messages)} messages · report {record.report_code}
+                </span>
+              </div>
+              <div className="record-detail">
+                <div className="record-detail-grid">
+                  <div>
+                    <span className="record-detail-label">Header from</span>
+                    <code>{record.header_from ?? "not reported"}</code>
+                  </div>
+                  <div>
+                    <span className="record-detail-label">Envelope from</span>
+                    <code>{record.envelope_from ?? "not reported"}</code>
+                  </div>
+                  <div>
+                    <span className="record-detail-label">Disposition</span>
+                    <span>{record.disposition ?? "none"}</span>
+                  </div>
+                  <div>
+                    <span className="record-detail-label">DMARC</span>
+                    <span>{record.aligned ? "aligned" : "not aligned"}</span>
+                  </div>
+                </div>
+                <div className="signature-section">
+                  <div className="record-detail-label">DKIM signatures</div>
+                  {record.dkim_entries.length === 0 ? (
+                    <p className="tiny muted">No per-signature details reported.</p>
+                  ) : (
+                    <div className="signature-list">
+                      {record.dkim_entries.map((entry, index) => (
+                        <div className="signature-row" key={`${entry.domain}-${entry.selector}-${index}`}>
+                          <span className={`health-dot ${entry.result === "pass" ? "ok" : "bad"}`} />
+                          <code>{entry.domain}</code>
+                          <span className="tiny muted">selector {entry.selector}</span>
+                          <span className={`signature-result ${entry.result === "pass" ? "pass" : "fail"}`}>
+                            {entry.result}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="signature-section">
+                  <div className="record-detail-label">SPF results</div>
+                  {record.spf_entries.length === 0 ? (
+                    <p className="tiny muted">No per-domain SPF details reported.</p>
+                  ) : (
+                    <div className="signature-list">
+                      {record.spf_entries.map((entry, index) => (
+                        <div className="signature-row" key={`${entry.domain}-${index}`}>
+                          <span className={`health-dot ${entry.result === "pass" ? "ok" : "bad"}`} />
+                          <code>{entry.domain}</code>
+                          <span className={`signature-result ${entry.result === "pass" ? "pass" : "fail"}`}>
+                            {entry.result}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {record.reason ? (
+                  <div className="signature-section">
+                    <div className="record-detail-label">Reporter reason</div>
+                    <span className="tiny">
+                      {record.reason.type ?? "unknown"}
+                      {record.reason.comment ? ` — ${record.reason.comment}` : ""}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Drawer>
+  );
+}
+
+function SourceRow({ source, onOpen }: { source: Source; onOpen?: () => void }) {
   const name = source.providers.length > 0 ? source.providers.join(" · ") : "Unnamed sender";
   return (
-    <tr>
+    <tr
+      className={onOpen ? "source-row" : undefined}
+      onClick={onOpen}
+      onKeyDown={(event) => (event.key === "Enter" || event.key === " ") && onOpen?.()}
+      tabIndex={onOpen ? 0 : undefined}
+      role={onOpen ? "button" : undefined}
+    >
       <td>
         <div className="primary-cell">{name}</div>
         <div className="tiny muted" style={{ fontFamily: "var(--font-mono)", marginTop: 2 }}>
@@ -54,6 +186,7 @@ function SourceRow({ source }: { source: Source }) {
       <td className="center">
         <CheckCell state={source.dmarc} label="DMARC" />
       </td>
+      <td>{onOpen ? <ChevronRight size={14} className="source-chev" /> : null}</td>
     </tr>
   );
 }
@@ -73,7 +206,7 @@ function GroupRow({
 }) {
   return (
     <tr className="source-group">
-      <td colSpan={7}>
+      <td colSpan={8}>
         <button className="group-head" onClick={onToggle} aria-expanded={open} type="button">
           <span className={`g-icon ${verified ? "ok" : "bad"}`}>
             {verified ? <ShieldCheck size={13} strokeWidth={2.4} /> : <ShieldAlert size={13} strokeWidth={2.4} />}
@@ -92,9 +225,23 @@ function GroupRow({
   );
 }
 
-export function SourcesCard({ sources, exportHref }: { sources: Source[]; exportHref?: string }) {
+export function SourcesCard({
+  sources,
+  exportHref,
+  domain,
+  days,
+  interactive,
+}: {
+  sources: Source[];
+  exportHref?: string;
+  domain?: string;
+  days?: number;
+  interactive?: boolean;
+}) {
   const [openVerified, setOpenVerified] = useState(true);
   const [openUnverified, setOpenUnverified] = useState(true);
+  const [selectedIp, setSelectedIp] = useState<string | null>(null);
+  const canOpen = interactive !== false;
 
   const verified = sources.filter((source) => source.dmarc === "pass");
   const unverified = sources.filter((source) => source.dmarc !== "pass");
@@ -119,6 +266,7 @@ export function SourcesCard({ sources, exportHref }: { sources: Source[]; export
   }
 
   return (
+    <>
     <section className="card">
       <div className="card-head">
         <div>
@@ -147,6 +295,7 @@ export function SourcesCard({ sources, exportHref }: { sources: Source[]; export
               <th className="center">SPF</th>
               <th className="center">DKIM</th>
               <th className="center">DMARC</th>
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -160,7 +309,7 @@ export function SourcesCard({ sources, exportHref }: { sources: Source[]; export
             {openVerified && verified.length > 0 ? (
               <>
                 <tr>
-                  <td colSpan={7} style={{ paddingTop: 0, paddingBottom: 8, borderTop: 0 }}>
+                  <td colSpan={8} style={{ paddingTop: 0, paddingBottom: 8, borderTop: 0 }}>
                     <div className="group-note">These proved they came from you.</div>
                     {unsigned > 0 ? (
                       <div className="chips">
@@ -170,7 +319,11 @@ export function SourcesCard({ sources, exportHref }: { sources: Source[]; export
                   </td>
                 </tr>
                 {verified.map((source) => (
-                  <SourceRow key={source.ip} source={source} />
+                  <SourceRow
+                    key={source.ip}
+                    source={source}
+                    onOpen={canOpen ? () => setSelectedIp(source.ip) : undefined}
+                  />
                 ))}
               </>
             ) : null}
@@ -185,7 +338,7 @@ export function SourcesCard({ sources, exportHref }: { sources: Source[]; export
             {openUnverified && unverified.length > 0 ? (
               <>
                 <tr>
-                  <td colSpan={7} style={{ paddingTop: 0, paddingBottom: 8, borderTop: 0 }}>
+                  <td colSpan={8} style={{ paddingTop: 0, paddingBottom: 8, borderTop: 0 }}>
                     <div className="group-note">These could not prove they came from you.</div>
                     {unverifiedMessages > 0 ? (
                       <div className="chips">
@@ -197,7 +350,11 @@ export function SourcesCard({ sources, exportHref }: { sources: Source[]; export
                   </td>
                 </tr>
                 {unverified.map((source) => (
-                  <SourceRow key={source.ip} source={source} />
+                  <SourceRow
+                    key={source.ip}
+                    source={source}
+                    onOpen={canOpen ? () => setSelectedIp(source.ip) : undefined}
+                  />
                 ))}
               </>
             ) : null}
@@ -211,5 +368,14 @@ export function SourcesCard({ sources, exportHref }: { sources: Source[]; export
         </p>
       </div>
     </section>
+    {canOpen && selectedIp ? (
+      <SourceDetailDrawer
+        ip={selectedIp}
+        domain={domain ?? "all"}
+        days={days ?? 30}
+        onClose={() => setSelectedIp(null)}
+      />
+    ) : null}
+    </>
   );
 }

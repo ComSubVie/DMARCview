@@ -175,6 +175,10 @@ export const api = {
     }),
 
   storage: () => request<import("./types").StorageInfo>("/storage"),
+  sourceActivity: (ip: string, params?: { domain?: string; days?: number }) =>
+    request<import("./types").SourceActivity>(
+      `/sources/${encodeURIComponent(ip)}${query(params ?? {})}`,
+    ),
   runBackup: () =>
     request<{ ok: boolean; providers: string[]; bytes: number; sha256: string }>(
       "/backup/run",

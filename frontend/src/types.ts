@@ -81,6 +81,29 @@ export interface Source {
   dispositions: Record<string, number>;
 }
 
+export interface SourceActivityRecord {
+  report_id: number;
+  report_code: string;
+  org: string;
+  date: string;
+  messages: number;
+  aligned: boolean;
+  disposition: string | null;
+  header_from: string | null;
+  envelope_from: string | null;
+  envelope_to: string | null;
+  dkim_entries: { domain: string; selector: string; result: string }[];
+  spf_entries: { domain: string; result: string }[];
+  reason: { type: string | null; comment: string | null } | null;
+}
+
+export interface SourceActivity {
+  ip: string;
+  from: string;
+  to: string;
+  records: SourceActivityRecord[];
+}
+
 export interface Country {
   code: string | null;
   name: string;

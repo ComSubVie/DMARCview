@@ -1,6 +1,6 @@
 [project]
 name = "dmarcview"
-version = "1.18.1"
+version = "1.19.0"
 description = "Self-hosted DMARC and TLS-RPT reporting dashboard for Stalwart"
 license = { text = "MIT" }
 requires-python = ">=3.11"

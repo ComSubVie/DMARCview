@@ -1,5 +1,13 @@
-import { ChevronLeft, ChevronRight, Download, FileText, Search, ShieldAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  FileText,
+  Search,
+  ShieldAlert,
+} from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, ApiError, rawReportUrl } from "../api";
 import { Drawer } from "../components/Drawer";
@@ -13,9 +21,92 @@ function SourceChip({ source }: { source: string }) {
   return <Badge tone={tone}>{source}</Badge>;
 }
 
+function RecordSignatureDetail({
+  record,
+}: {
+  record: ReportDetail["records"][number];
+}) {
+  const passing = record.dkim_entries.filter((entry) => entry.result === "pass").length;
+  return (
+    <div className="record-detail">
+      <div className="record-detail-grid">
+        <div>
+          <span className="record-detail-label">Envelope from</span>
+          <code>{record.envelope_from ?? "not reported"}</code>
+        </div>
+        <div>
+          <span className="record-detail-label">Envelope to</span>
+          <code>{record.envelope_to ?? "not reported"}</code>
+        </div>
+        <div>
+          <span className="record-detail-label">Header from</span>
+          <code>{record.header_from ?? "not reported"}</code>
+        </div>
+        <div>
+          <span className="record-detail-label">Disposition</span>
+          <span>{record.disposition ?? "none"}</span>
+        </div>
+      </div>
+      <div className="signature-section">
+        <div className="record-detail-label">
+          DKIM signatures — {passing} of {record.dkim_entries.length} passing
+        </div>
+        {record.dkim_entries.length === 0 ? (
+          <p className="tiny muted">The reporter did not include per-signature DKIM details.</p>
+        ) : (
+          <div className="signature-list">
+            {record.dkim_entries.map((entry, index) => (
+              <div className="signature-row" key={`${entry.domain}-${entry.selector}-${index}`}>
+                <span className={`health-dot ${entry.result === "pass" ? "ok" : "bad"}`} />
+                <code>{entry.domain}</code>
+                <span className="tiny muted">selector {entry.selector}</span>
+                <span className={`signature-result ${entry.result === "pass" ? "pass" : "fail"}`}>
+                  {entry.result}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="tiny muted signature-help">
+          DMARC passes when at least one aligned DKIM signature validates; a failed extra
+          signature does not fail DMARC by itself.
+        </p>
+      </div>
+      <div className="signature-section">
+        <div className="record-detail-label">SPF results</div>
+        {record.spf_entries.length === 0 ? (
+          <p className="tiny muted">The reporter did not include per-domain SPF details.</p>
+        ) : (
+          <div className="signature-list">
+            {record.spf_entries.map((entry, index) => (
+              <div className="signature-row" key={`${entry.domain}-${index}`}>
+                <span className={`health-dot ${entry.result === "pass" ? "ok" : "bad"}`} />
+                <code>{entry.domain}</code>
+                <span className={`signature-result ${entry.result === "pass" ? "pass" : "fail"}`}>
+                  {entry.result}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      {record.reason ? (
+        <div className="signature-section">
+          <div className="record-detail-label">Reporter reason</div>
+          <span className="tiny">
+            {record.reason.type ?? "unknown"}
+            {record.reason.comment ? ` — ${record.reason.comment}` : ""}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ReportDrawer({ id, onClose }: { id: number; onClose: () => void }) {
   const [report, setReport] = useState<ReportDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -132,11 +223,25 @@ function ReportDrawer({ id, onClose }: { id: number; onClose: () => void }) {
                 <th className="center">SPF</th>
                 <th className="center">DKIM</th>
                 <th className="hide-sm">Header from</th>
+                <th />
               </tr>
             </thead>
             <tbody>
-              {report.records.map((record) => (
-                <tr key={`${record.ip}-${record.header_from}`}>
+              {report.records.map((record, index) => {
+                const key = `${record.ip}-${record.header_from ?? ""}-${index}`;
+                const open = expanded === key;
+                return (
+                  <Fragment key={key}>
+                    <tr
+                      className="report-record-row"
+                      onClick={() => setExpanded(open ? null : key)}
+                      onKeyDown={(event) =>
+                        (event.key === "Enter" || event.key === " ") &&
+                        setExpanded(open ? null : key)
+                      }
+                      tabIndex={0}
+                      aria-expanded={open}
+                    >
                   <td>
                     <span className="source-ip">{record.ip}</span>
                     {record.reason ? (
@@ -167,8 +272,20 @@ function ReportDrawer({ id, onClose }: { id: number; onClose: () => void }) {
                       {record.header_from ?? "—"}
                     </span>
                   </td>
-                </tr>
-              ))}
+                  <td>
+                    <ChevronDown size={14} className={`record-chev ${open ? "open" : ""}`} />
+                  </td>
+                    </tr>
+                    {open ? (
+                      <tr className="record-detail-row">
+                        <td colSpan={8}>
+                          <RecordSignatureDetail record={record} />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
 

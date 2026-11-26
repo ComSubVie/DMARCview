@@ -124,6 +124,22 @@ def dashboard(
     return payload
 
 
+@router.get("/sources/{source_ip}")
+def source_activity(
+    source_ip: str,
+    domain: Optional[str] = Query(default=None),
+    days: int = Query(default=30, ge=1, le=analytics.MAX_DAYS),
+    session: Session = Depends(get_session),
+) -> dict:
+    domain_row = _domain_or_404(session, domain)
+    return analytics.source_activity(
+        session,
+        source_ip,
+        domain_id=domain_row.id if domain_row else None,
+        rng=analytics.resolve_range(days, None, None),
+    )
+
+
 @router.get("/reports")
 def reports(
     domain: Optional[str] = Query(default=None),

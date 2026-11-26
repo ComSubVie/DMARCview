@@ -487,7 +487,8 @@ added JMAP email submission; v1.14 added network checks (sending-IP FCrDNS, MX P
 consistency, HELO/EHLO DNS and CAA); v1.15 added regression/job alerts and per-domain HELO;
 v1.16 adds scheduled WebDAV/S3 off-box backups; v1.17 adds backup checksum verification, stale
 alerts, manual backup, audit events and archive restore; v1.18 adds remote fetch/restore,
-backup target tests and audit-log retention. No mandatory roadmap work remains; MFA
+backup target tests and audit-log retention; v1.19 adds per-signature DKIM drill-downs for
+sources and reports. No mandatory roadmap work remains; MFA
 and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
@@ -496,7 +497,7 @@ and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (145 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (146 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build

@@ -145,7 +145,7 @@ export function SharedView() {
 
         <div className="grid cols-8-4 grid-bottom">
           {dashboard.sources.length > 0 ? (
-            <SourcesCard sources={dashboard.sources} />
+            <SourcesCard sources={dashboard.sources} interactive={false} />
           ) : (
             <section className="card">
               <div className="card-body">

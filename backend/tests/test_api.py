@@ -555,3 +555,18 @@ def test_delivery_and_digest_status(auth_client: TestClient):
     assert digest["enabled"] is False
     assert digest["days"] >= 1
     assert "recipients" in digest
+
+
+def test_source_activity_endpoint(auth_client: TestClient):
+    upload_all(auth_client)
+    response = auth_client.get(
+        "/api/sources/62.116.130.25", params={"domain": "tgm.rocks", "days": 30}
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["ip"] == "62.116.130.25"
+    assert data["records"]
+    record = data["records"][0]
+    assert record["header_from"] == "tgm.rocks"
+    assert "dkim_entries" in record
+    assert "spf_entries" in record

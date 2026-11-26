@@ -268,7 +268,12 @@ export function DashboardPage() {
           </div>
 
           <div className="grid cols-8-4 grid-bottom">
-            <SourcesCard sources={dashboard.sources} exportHref={sourcesExport} />
+            <SourcesCard
+              sources={dashboard.sources}
+              exportHref={sourcesExport}
+              domain={domain}
+              days={dashboard.range.days}
+            />
             <div className="stack right">
               <CountriesCard countries={dashboard.countries} />
               <TlsTeaser tls={dashboard.tls} />

@@ -1401,6 +1401,58 @@ def reports_page(
     }
 
 
+def source_activity(
+    session: Session,
+    source_ip: str,
+    *,
+    domain_id: Optional[int],
+    rng: DateRange,
+    limit: int = 50,
+) -> dict[str, Any]:
+    conditions: list[Any] = [
+        SourceRecord.source_ip == source_ip,
+        SourceRecord.report_date >= rng.start,
+        SourceRecord.report_date <= rng.end,
+    ]
+    if domain_id is not None:
+        conditions.append(SourceRecord.domain_id == domain_id)
+    rows = session.exec(
+        select(Report, SourceRecord)
+        .join(SourceRecord, SourceRecord.report_id == Report.id)
+        .where(*conditions)
+        .order_by(Report.date_end.desc(), Report.id.desc())
+        .limit(limit)
+    ).all()
+    records = []
+    for report, record in rows:
+        records.append(
+            {
+                "report_id": report.id,
+                "report_code": report.report_id,
+                "org": report.org_name,
+                "date": report.report_date.isoformat(),
+                "messages": record.message_count,
+                "aligned": record.aligned,
+                "disposition": record.disposition,
+                "header_from": record.header_from,
+                "envelope_from": record.envelope_from,
+                "envelope_to": record.envelope_to,
+                "dkim_entries": [
+                    {"domain": d, "selector": s, "result": r}
+                    for d, s, r in zip(record.dkim_domains, record.dkim_selectors, record.dkim_results, strict=False)
+                ],
+                "spf_entries": [
+                    {"domain": d, "result": r}
+                    for d, r in zip(record.spf_domains, record.spf_results, strict=False)
+                ],
+                "reason": {"type": record.reason_type, "comment": record.reason_comment}
+                if record.reason_type
+                else None,
+            }
+        )
+    return {"ip": source_ip, "from": rng.start.isoformat(), "to": rng.end.isoformat(), "records": records}
+
+
 def report_detail(session: Session, report_id: int) -> Optional[dict[str, Any]]:
     report = session.get(Report, report_id)
     if report is None:
