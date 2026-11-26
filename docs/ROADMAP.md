@@ -1,13 +1,13 @@
 # Roadmap
 
-_Rev 29 · 26 November 2026 · DKIM evidence drill-down (v1.19)_
+_Rev 30 · 26 November 2026 · TLS host backfill (v1.19.1)_
 
 DMARCView began as a self-hosted answer to **“what happened?”** and grew into a complete
 reporting and operations dashboard: **“is my configuration correct?”**, **“tell me when it
 changes”**, **“why did it change?”**, **“what should I do next?”**, and now **“can I prove what
 changed and who changed it?”**.
 
-**Current development release: v1.19.0.** The mandatory roadmap is complete. What remains is
+**Current development release: v1.19.1.** The mandatory roadmap is complete. What remains is
 optional, trigger-based or deliberately parked work.
 
 ## Delivered
@@ -46,7 +46,7 @@ optional, trigger-based or deliberately parked work.
 
 ## Current status
 
-- **Tests:** 146 backend tests, plus the frontend type/build check in CI.
+- **Tests:** 148 backend tests, plus the frontend type/build check in CI.
 - **Schema:** Alembic `0001` through `0015`; upgrades run automatically on start.
 - **Runtime:** one container, one SQLite database, no Redis/Celery, no telemetry.
 

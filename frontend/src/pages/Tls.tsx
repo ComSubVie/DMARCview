@@ -528,6 +528,13 @@ export function TlsPage() {
             </div>
           </div>
           <div className="card-body" style={{ paddingTop: 10 }}>
+            {data.policies.some((host) => host.host === "(not reported)") ? (
+              <p className="tiny muted" style={{ marginBottom: 10, lineHeight: 1.5 }}>
+                Some TLS-RPT records did not include <code>mx-host</code> or a policy string with an
+                <code>mx:</code> entry. Run <code>python -m app.cli tls-reparse</code> to backfill
+                reports whose raw JSON contains the host.
+              </p>
+            ) : null}
             {data.policies.length === 0 ? (
               <p className="tiny muted">No MX hosts reported.</p>
             ) : (

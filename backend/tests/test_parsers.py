@@ -216,3 +216,32 @@ def test_dmarcbis_policy_fields():
     assert report.policy_testing == "y"
     assert report.policy_discovery == "treewalk"
     assert report.report_errors == ["Invalid rua destination"]
+
+
+def test_tlsrpt_extracts_mx_from_policy_string():
+    document = {
+        "organization-name": "Example",
+        "report-id": "policy-string-mx",
+        "date-range": {
+            "start-datetime": "2026-11-18T00:00:00Z",
+            "end-datetime": "2026-11-19T00:00:00Z",
+        },
+        "policies": [
+            {
+                "policy": {
+                    "policy-type": "sts",
+                    "policy-domain": "tgm.rocks",
+                    "policy-string": [
+                        "version: STSv1",
+                        "mode: enforce",
+                        "mx: mail.tgm.rocks",
+                        "max_age: 604800",
+                    ],
+                },
+                "summary": {"total-successful-session-count": 8},
+            }
+        ],
+    }
+    report = parse_tlsrpt(json.dumps(document).encode())
+    assert report.mx_hosts == ["mail.tgm.rocks"]
+    assert report.policies[0].mx_hosts == ["mail.tgm.rocks"]

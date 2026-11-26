@@ -119,6 +119,19 @@ def _extract_mode(policy_string: list[str], explicit: Any) -> Optional[str]:
     return None
 
 
+def _extract_mx_hosts(policy_string: list[str]) -> list[str]:
+    hosts: list[str] = []
+    for raw in policy_string:
+        for line in str(raw).splitlines():
+            key, separator, value = line.partition(":")
+            if not separator or key.strip().lower() != "mx":
+                continue
+            host = value.strip().rstrip(".")
+            if host and host not in hosts:
+                hosts.append(host)
+    return hosts
+
+
 def _extract_max_age(policy_string: list[str], explicit: Any) -> Optional[int]:
     if explicit is not None:
         return _as_int(explicit)
@@ -161,6 +174,8 @@ def parse_tlsrpt(data: bytes) -> TlsReportData:
     base_section = policy_section or first_policy
     policy_string = _as_list(_first(base_section, "policy-string", "policy_string", default=[]))
     mx_hosts = _as_list(_first(base_section, "mx-host", "mx_host", "mx-hosts", default=[]))
+    if not mx_hosts:
+        mx_hosts = _extract_mx_hosts(policy_string)
     mode = _extract_mode(policy_string, _first(base_section, "mode"))
     max_age = _extract_max_age(policy_string, _first(base_section, "max-age", "max_age"))
 
@@ -193,7 +208,12 @@ def parse_tlsrpt(data: bytes) -> TlsReportData:
 
         entry_type = _first(entry_policy, "policy-type", "policy_type") or report.policy_type
         entry_domain = _first(entry_policy, "policy-domain", "policy_domain") or report.policy_domain
+        entry_policy_string = _as_list(
+            _first(entry_policy, "policy-string", "policy_string")
+        ) or policy_string
         entry_hosts = _as_list(_first(entry_policy, "mx-host", "mx_host", "mx-hosts"))
+        if not entry_hosts:
+            entry_hosts = _extract_mx_hosts(entry_policy_string)
         if not entry_hosts:
             entry_hosts = mx_hosts
         success = _as_int(

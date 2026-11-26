@@ -357,6 +357,54 @@ def _store_tls(
     session.commit()
 
 
+def reparse_tls_mx_hosts(session: Session, *, dry_run: bool = False) -> dict[str, Any]:
+    """Backfill ``mx_hosts`` for TLS-RPT policies that omitted the explicit field.
+
+    The raw JSON is retained, so reports parsed before policy-string extraction was
+    added can be repaired without downloading them again.
+    """
+    updated_reports = updated_policies = failed = 0
+    errors: list[str] = []
+    reports = session.exec(select(TlsReport)).all()
+    for report in reports:
+        try:
+            parsed = parse_tlsrpt(report.raw_json)
+        except TlsParseError as exc:
+            failed += 1
+            errors.append(f"{report.report_id}: {exc}")
+            continue
+        changed = False
+        if parsed.mx_hosts and parsed.mx_hosts != (report.mx_hosts or []):
+            if not dry_run:
+                report.mx_hosts = parsed.mx_hosts
+                session.add(report)
+            changed = True
+        policies = session.exec(
+            select(TlsPolicy)
+            .where(TlsPolicy.tls_report_id == report.id)
+            .order_by(TlsPolicy.id)
+        ).all()
+        for stored, fresh in zip(policies, parsed.policies, strict=False):
+            if fresh.mx_hosts and fresh.mx_hosts != (stored.mx_hosts or []):
+                if not dry_run:
+                    stored.mx_hosts = fresh.mx_hosts
+                    session.add(stored)
+                updated_policies += 1
+                changed = True
+        if changed:
+            updated_reports += 1
+    if not dry_run:
+        session.commit()
+    return {
+        "dry_run": dry_run,
+        "reports": len(reports),
+        "updated_reports": updated_reports,
+        "updated_policies": updated_policies,
+        "failed": failed,
+        "errors": errors[:5],
+    }
+
+
 def ingest_files(session: Session, paths: Iterable[Path], source: str = "import") -> IngestResult:
     total = IngestResult(messages=0)
     for path in paths:

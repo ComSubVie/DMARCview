@@ -10,8 +10,8 @@ from types import SimpleNamespace
 from sqlmodel import Session, select
 
 from app import analytics
-from app.ingest.service import _store_tls
-from app.models import Domain, TlsPolicy
+from app.ingest.service import _store_tls, reparse_tls_mx_hosts
+from app.models import Domain, TlsPolicy, TlsReport
 
 
 def test_tls_multi_policy_attribution(session: Session):
@@ -75,3 +75,48 @@ def test_tls_multi_policy_attribution(session: Session):
     assert dashboard_b["policy_domains"][0]["domain"] == "b.example"
     assert analytics.tls_reports_page(session, domain=a)["total"] == 1
     assert analytics.tls_reports_page(session, domain=b)["total"] == 1
+
+
+def test_reparse_backfills_policy_string_mx_hosts(session: Session):
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    document = {
+        "organization-name": "Example",
+        "report-id": "reparse-mx",
+        "date-range": {
+            "start-datetime": (now - timedelta(hours=1)).isoformat(),
+            "end-datetime": now.isoformat(),
+        },
+        "policies": [
+            {
+                "policy": {
+                    "policy-type": "sts",
+                    "policy-domain": "reparse.example",
+                    "policy-string": ["version: STSv1", "mode: enforce", "mx: mx.reparse.example"],
+                },
+                "summary": {"total-successful-session-count": 8},
+            }
+        ],
+    }
+    raw = json.dumps(document).encode()
+    _store_tls(
+        session,
+        raw,
+        hashlib.sha256(raw).hexdigest(),
+        SimpleNamespace(message_id="reparse", received_at=None),
+        "test",
+        None,
+    )
+    report = session.exec(select(TlsReport)).one()
+    policy = session.exec(select(TlsPolicy)).one()
+    report.mx_hosts = []
+    policy.mx_hosts = []
+    session.add(report)
+    session.add(policy)
+    session.commit()
+
+    result = reparse_tls_mx_hosts(session)
+    assert result["updated_policies"] == 1
+    session.refresh(policy)
+    session.refresh(report)
+    assert policy.mx_hosts == ["mx.reparse.example"]
+    assert report.mx_hosts == ["mx.reparse.example"]

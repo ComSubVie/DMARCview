@@ -28,7 +28,7 @@ from .offsite import OffsiteError, fetch_latest, upload_bundle
 from .ingest.dmarc import DmarcParseError, parse_dmarc
 from .ingest.jmap import JMAPClient
 from .ingest.mime import MimeParseError, extract_payloads
-from .ingest.service import ingest_files, sync_jmap
+from .ingest.service import ingest_files, reparse_tls_mx_hosts, sync_jmap
 from .ingest.tlsrpt import TlsParseError, parse_tlsrpt
 from .models import (
     Domain,
@@ -381,6 +381,14 @@ def cmd_backup(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tls_reparse(args: argparse.Namespace) -> int:
+    init_db()
+    with Session(get_engine()) as session:
+        result = reparse_tls_mx_hosts(session, dry_run=args.dry_run)
+    print(json.dumps(result, indent=2))
+    return 0 if result["failed"] == 0 else 1
+
+
 def cmd_geo_enrich(args: argparse.Namespace) -> int:
     """Backfill country data for rows ingested before the GeoIP database existed."""
     init_db()
@@ -521,6 +529,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="report what would be archived and deleted")
     p.add_argument("--yes", action="store_true", help="confirm actual deletion")
     p.set_defaults(func=cmd_prune)
+
+    p = sub.add_parser("tls-reparse", help="backfill TLS-RPT receiving MX hosts from raw reports")
+    p.add_argument("--dry-run", action="store_true", help="report changes without saving")
+    p.set_defaults(func=cmd_tls_reparse)
 
     p = sub.add_parser("geo-enrich", help="backfill countries for existing report rows")
     p.add_argument("--all", action="store_true", help="re-resolve every IP, not only unknown rows")

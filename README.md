@@ -488,7 +488,7 @@ consistency, HELO/EHLO DNS and CAA); v1.15 added regression/job alerts and per-d
 v1.16 adds scheduled WebDAV/S3 off-box backups; v1.17 adds backup checksum verification, stale
 alerts, manual backup, audit events and archive restore; v1.18 adds remote fetch/restore,
 backup target tests and audit-log retention; v1.19 adds per-signature DKIM drill-downs for
-sources and reports. No mandatory roadmap work remains; MFA
+sources and reports; v1.19.1 backfills TLS-RPT receiving hosts from policy strings. No mandatory roadmap work remains; MFA
 and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Development
@@ -497,7 +497,7 @@ and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (146 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (148 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -811,6 +811,7 @@ Set `AUDIT_RETENTION_DAYS` to prune old audit-log rows. The daily retention job 
 | GeoIP download says `CERTIFICATE_VERIFY_FAILED` | The script now tries the system store; otherwise pass `--ca-file /etc/ssl/cert.pem` or run `./.venv/bin/python scripts/fetch_geoip.py` |
 | A report is skipped | Its submitter/report-id or digest was already ingested; check `ProcessedMessage` / `Report.raw_sha256` |
 | TLS page is empty | TLS-RPT reports only arrive if `_smtp._tls` publishes `rua=` |
+| TLS receiving host shows *(not reported)* | The reporter omitted `mx-host`; run `python -m app.cli tls-reparse` to backfill it from the stored policy string |
 | Health checks all show *Unknown* | DNS is blocked or the resolver is unreachable; set `DNS_NAMESERVERS` |
 | Transport probes fail with timeouts | Outbound port 25 is blocked by the host or provider |
 | MTA-STS not reachable | The policy must be served over HTTPS at `mta-sts.<domain>/.well-known/mta-sts.txt` |
