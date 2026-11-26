@@ -497,7 +497,7 @@ and RUF/platform work are optional. See [docs/ROADMAP.md](docs/ROADMAP.md).
 invariants, the definition of done and the release process. `CLAUDE.md` imports it.
 
 ```bash
-# backend tests (148 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
+# backend tests (150 tests: parsers, ingestion, API, auth, mocked JMAP, health, probes, alerts, identities)
 cd backend && ../.venv/bin/pytest -q
 
 # frontend type-check + production build
@@ -590,9 +590,10 @@ The **Alerts** page evaluates thirteen rules over the reports, health snapshots 
 | Scheduled job failing | a scheduled health-check, probe or backup run reports errors (global rule) |
 | Off-box backup stale | no successful off-box backup within the configured age (at least 2× `BACKUP_INTERVAL_HOURS`; global rule) |
 
-Evaluation runs hourly and on demand. Incidents are deduplicated while open, repeated
-episodes are suppressed by a cooldown, and a resolution notice is sent when the condition
-clears. Thresholds, enablement and cooldown are editable per rule in the UI. The JMAP sync rule
+Evaluation runs hourly and on demand. A manual **Re-check now** on Domain Health also
+reconciles that domain's existing incidents without creating new ones, so a recovered STARTTLS
+probe clears its incident immediately. Incidents are deduplicated while open, repeated episodes
+are suppressed by a cooldown, and a resolution notice is sent when the condition clears. Thresholds, enablement and cooldown are editable per rule in the UI. The JMAP sync rule
 is global; the other rules can be overridden per domain.
 
 Delivery channels are configured with environment variables only — credentials never enter
@@ -811,6 +812,7 @@ Set `AUDIT_RETENTION_DAYS` to prune old audit-log rows. The daily retention job 
 | GeoIP download says `CERTIFICATE_VERIFY_FAILED` | The script now tries the system store; otherwise pass `--ca-file /etc/ssl/cert.pem` or run `./.venv/bin/python scripts/fetch_geoip.py` |
 | A report is skipped | Its submitter/report-id or digest was already ingested; check `ProcessedMessage` / `Report.raw_sha256` |
 | TLS page is empty | TLS-RPT reports only arrive if `_smtp._tls` publishes `rua=` |
+| TLS receiving host shows *(no policy found)* | The reporter found no MTA-STS/DANE policy, so it cannot name a receiving host; this is expected when no policy is published |
 | TLS receiving host shows *(not reported)* | The reporter omitted `mx-host`; run `python -m app.cli tls-reparse` to backfill it from the stored policy string |
 | Health checks all show *Unknown* | DNS is blocked or the resolver is unreachable; set `DNS_NAMESERVERS` |
 | Transport probes fail with timeouts | Outbound port 25 is blocked by the host or provider |

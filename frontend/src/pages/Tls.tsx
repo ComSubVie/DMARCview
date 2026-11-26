@@ -528,6 +528,13 @@ export function TlsPage() {
             </div>
           </div>
           <div className="card-body" style={{ paddingTop: 10 }}>
+            {data.policies.some((host) => host.host === "(no policy found)") ? (
+              <p className="tiny muted" style={{ marginBottom: 10, lineHeight: 1.5 }}>
+                These reports say the sender found <strong>no MTA-STS or DANE policy</strong>, so
+                they do not identify a receiving host. This is expected when no policy is
+                published or the sender has not fetched it yet.
+              </p>
+            ) : null}
             {data.policies.some((host) => host.host === "(not reported)") ? (
               <p className="tiny muted" style={{ marginBottom: 10, lineHeight: 1.5 }}>
                 Some TLS-RPT records did not include <code>mx-host</code> or a policy string with an

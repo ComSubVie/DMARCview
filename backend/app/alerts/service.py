@@ -97,13 +97,19 @@ async def evaluate(
     *,
     now: Optional[datetime] = None,
     send: bool = True,
+    domain: Optional[Domain] = None,
+    include_global: bool = True,
+    create: bool = True,
+    record_run: bool = True,
 ) -> dict[str, Any]:
     settings = get_settings()
     now = _aware(now) or utcnow()
     ensure_rules(session)
 
     rules = session.exec(select(AlertRule).where(AlertRule.enabled.is_(True))).all()
-    domains = session.exec(select(Domain).order_by(Domain.name)).all()
+    domains = [domain] if domain is not None else session.exec(
+        select(Domain).order_by(Domain.name)
+    ).all()
     summary: dict[str, Any] = {
         "created": 0,
         "resolved": 0,
@@ -117,14 +123,19 @@ async def evaluate(
         spec = SPECS.get(rule.kind)
         if spec is None:
             continue
-        targets: list[Optional[Domain]] = [None] if spec.scope == "global" else list(domains)
-        for domain in targets:
+        if spec.scope == "global":
+            if not include_global or domain is not None:
+                continue
+            targets: list[Optional[Domain]] = [None]
+        else:
+            targets = list(domains)
+        for target in targets:
             override = None
-            if domain is not None:
+            if target is not None:
                 override = session.exec(
                     select(AlertRuleOverride).where(
                         AlertRuleOverride.rule_id == rule.id,
-                        AlertRuleOverride.domain_id == domain.id,
+                        AlertRuleOverride.domain_id == target.id,
                     )
                 ).first()
             condition = dict(rule.condition or {})
@@ -139,14 +150,14 @@ async def evaluate(
                 else evaluate_rule(
                     session,
                     type("RuleView", (), {"kind": rule.kind, "condition": condition})(),
-                    domain,
+                    target,
                     now,
                 )
             )
             domain_clause = (
                 AlertEvent.domain_id.is_(None)
-                if domain is None
-                else AlertEvent.domain_id == domain.id
+                if target is None
+                else AlertEvent.domain_id == target.id
             )
             open_events = session.exec(
                 select(AlertEvent).where(
@@ -169,6 +180,8 @@ async def evaluate(
                     session.add(existing)
                     continue
 
+                if not create:
+                    continue
                 latest = session.exec(
                     select(AlertEvent)
                     .where(
@@ -186,7 +199,7 @@ async def evaluate(
 
                 event = AlertEvent(
                     rule_id=rule.id,
-                    domain_id=domain.id if domain is not None else None,
+                    domain_id=target.id if target is not None else None,
                     dedupe_key=finding.key[:160],
                     severity=finding.severity,
                     title=finding.title[:255],
@@ -198,13 +211,13 @@ async def evaluate(
                 session.flush()
                 summary["created"] += 1
                 if send:
-                    results = await _notify(event, domain, settings, resolved=False)
+                    results = await _notify(event, target, settings, resolved=False)
                     if results:
                         summary["notified"] += 1
                         summary["delivered"] += sum(1 for result in results if result.ok)
                         summary["failed"] += sum(1 for result in results if not result.ok)
                 summary["events"].append(
-                    serialize_event(event, domain.name if domain else "All domains", rule.kind)
+                    serialize_event(event, target.name if target else "All domains", rule.kind)
                 )
 
             for key, event in by_key.items():
@@ -214,10 +227,12 @@ async def evaluate(
                 session.add(event)
                 summary["resolved"] += 1
                 if send:
-                    await _notify(event, domain, settings, resolved=True)
+                    await _notify(event, target, settings, resolved=True)
 
             session.commit()
 
+    if not record_run:
+        return summary
     state = session.get(SyncState, LAST_RUN_KEY)
     if state is None:
         state = SyncState(key=LAST_RUN_KEY, value=now.isoformat())

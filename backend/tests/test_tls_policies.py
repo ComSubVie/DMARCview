@@ -120,3 +120,36 @@ def test_reparse_backfills_policy_string_mx_hosts(session: Session):
     session.refresh(report)
     assert policy.mx_hosts == ["mx.reparse.example"]
     assert report.mx_hosts == ["mx.reparse.example"]
+
+
+def test_no_policy_reports_are_not_labelled_as_a_receiving_host(session: Session):
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    document = {
+        "organization-name": "Example",
+        "report-id": "no-policy",
+        "date-range": {
+            "start-datetime": (now - timedelta(hours=1)).isoformat(),
+            "end-datetime": now.isoformat(),
+        },
+        "policies": [
+            {
+                "policy": {"policy-type": "no-policy-found", "policy-domain": "nopolicy.example"},
+                "summary": {"total-successful-session-count": 8},
+            }
+        ],
+    }
+    raw = json.dumps(document).encode()
+    _store_tls(
+        session,
+        raw,
+        hashlib.sha256(raw).hexdigest(),
+        SimpleNamespace(message_id="no-policy", received_at=None),
+        "test",
+        None,
+    )
+    domain = analytics.get_domain(session, "nopolicy.example")
+    assert domain is not None
+    result = analytics.tls_dashboard(session, domain, analytics.resolve_range(30))
+    hosts = {item["host"] for item in result["policies"]}
+    assert "(no policy found)" in hosts
+    assert "(not reported)" not in hosts

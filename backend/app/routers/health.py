@@ -24,6 +24,7 @@ from ..health.service import (
     serialise_settings,
     update_settings,
 )
+from ..alerts.service import evaluate as evaluate_alerts
 from ..jobs import job_backup, job_specs, status as jobs_status
 from ..models import (
     Domain,
@@ -63,6 +64,16 @@ async def run_domain_health(
     row = _domain(session, domain)
     await run_and_store_health(session, row)
     await run_and_store_probes(session, row)
+    if get_settings().alerts_enabled:
+        # Clear existing incidents immediately when a manual recheck passes.
+        # Do not create new incidents from a health-only run.
+        await evaluate_alerts(
+            session,
+            domain=row,
+            include_global=False,
+            create=False,
+            record_run=False,
+        )
     return health_payload(session, row)
 
 

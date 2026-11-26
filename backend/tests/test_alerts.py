@@ -544,3 +544,52 @@ def test_backup_stale_alert_is_global_and_resolves(session: Session, monkeypatch
     session.commit()
     result = evaluate_now(session)
     assert result["resolved"] == 1
+
+
+def test_domain_reconciliation_resolves_cleared_probe_alert(session: Session):
+    domain = make_domain(session)
+    only_rule(session, "starttls_broken")
+    now = datetime.now(timezone.utc)
+    session.add(
+        TransportProbe(
+            domain_id=domain.id,
+            host="mail.tgm.rocks",
+            port=25,
+            mode="smtp",
+            status="fail",
+            error="connection timed out",
+            checked_at=now - timedelta(minutes=5),
+        )
+    )
+    session.commit()
+
+    first = evaluate_now(session)
+    assert first["created"] == 1
+    event = session.exec(select(AlertEvent)).one()
+    assert event.resolved_at is None
+
+    session.add(
+        TransportProbe(
+            domain_id=domain.id,
+            host="mail.tgm.rocks",
+            port=25,
+            mode="smtp",
+            status="pass",
+            checked_at=now,
+        )
+    )
+    session.commit()
+    result = asyncio.run(
+        evaluate(
+            session,
+            now=now,
+            send=False,
+            domain=domain,
+            include_global=False,
+            create=False,
+            record_run=False,
+        )
+    )
+    assert result["resolved"] == 1
+    session.refresh(event)
+    assert event.resolved_at is not None

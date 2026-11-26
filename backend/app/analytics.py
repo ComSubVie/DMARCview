@@ -1581,7 +1581,12 @@ def tls_dashboard(session: Session, domain: Optional[Domain], rng: DateRange) ->
         bucket = by_day.setdefault(policy.report_date, [0, 0])
         bucket[0] += policy.total_success
         bucket[1] += policy.total_failure
-        for host in policy.mx_hosts or ["(not reported)"]:
+        missing_host = (
+            "(no policy found)"
+            if (policy.policy_type or "").lower() == "no-policy-found"
+            else "(not reported)"
+        )
+        for host in policy.mx_hosts or [missing_host]:
             entry = by_mx.setdefault(host, {"success": 0, "failure": 0, "policies": 0})
             entry["success"] += policy.total_success
             entry["failure"] += policy.total_failure
