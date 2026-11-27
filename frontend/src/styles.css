@@ -4300,3 +4300,41 @@ table.data td.right {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+.health-transport-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.health-transport-line.ok {
+  color: #067647;
+}
+
+.health-transport-line.warn {
+  color: #b54708;
+}
+
+.health-transport-line.bad {
+  color: #b42318;
+}
+
+.health-transport-line {
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.health-next-transport {
+  border-color: #fecdca;
+  background: #fffbfa;
+}
+
+.health-next-transport.warn {
+  border-color: #fedf89;
+  background: #fffcf5;
+}
+
+#transport {
+  scroll-margin-top: 18px;
+}

@@ -680,6 +680,14 @@ export function HealthPage() {
       (a, b) =>
         (a.status === "fail" ? 0 : 1) - (b.status === "fail" ? 0 : 1),
     )[0];
+  const probeTotal = health.probes.length;
+  const probePassed = health.probes.filter((probe) => probe.status === "pass").length;
+  const probeFailed = health.probes.filter((probe) => probe.status === "fail").length;
+  const probeWarn = health.probes.filter((probe) => probe.status === "warn").length;
+  const probeTone = probeFailed > 0 ? "bad" : probeWarn > 0 ? "warn" : "ok";
+  const nextProbe =
+    health.probes.find((probe) => probe.status === "fail") ??
+    health.probes.find((probe) => probe.status === "warn");
 
   return (
     <div className="fade-in">
@@ -714,6 +722,10 @@ export function HealthPage() {
             <small>%</small>
           </span>
           <span className="label">core score</span>
+          <span className={`health-transport-line ${probeTone}`}>
+            <span className={`health-dot ${probeTone}`} />
+            {probeTotal > 0 ? `Transport ${probePassed}/${probeTotal} passing` : "No transport probes"}
+          </span>
         </div>
         <div className="health-hero-main">
           <div className="health-hero-top">
@@ -755,6 +767,23 @@ export function HealthPage() {
         </div>
       ) : null}
 
+      {nextProbe ? (
+        <div className={`callout health-next health-next-transport${nextProbe.status === "warn" ? " warn" : ""}`}>
+          <Wrench size={15} style={{ flex: "none", marginTop: 1 }} />
+          <span>
+            <strong>Transport:</strong> {nextProbe.host}:{nextProbe.port} —{" "}
+            {nextProbe.error ||
+              (nextProbe.days_left !== null
+                ? `certificate expires in ${nextProbe.days_left} days`
+                : "STARTTLS or certificate check needs attention")}
+            <a className="check-link" href="#transport">
+              Open transport
+              <ArrowRight size={12} />
+            </a>
+          </span>
+        </div>
+      ) : null}
+
       <div className="check-grid">
         {core.map((result) => (
           <CheckCard key={result.key} result={result} link={CHECK_LINKS[result.key]} />
@@ -777,7 +806,7 @@ export function HealthPage() {
       ) : null}
 
       <div className="grid cols-8-4">
-        <section className="card">
+        <section className="card" id="transport">
           <div className="card-head">
             <div>
               <h2 className="card-title">Transport & certificates</h2>

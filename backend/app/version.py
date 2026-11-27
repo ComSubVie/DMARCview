@@ -7,4 +7,4 @@ a build argument.
 
 import os
 
-VERSION = os.environ.get("DMARCVIEW_VERSION", "").strip() or "1.19.2"
+VERSION = os.environ.get("DMARCVIEW_VERSION", "").strip() or "1.20.0"

@@ -1,13 +1,13 @@
 # Roadmap
 
-_Rev 32 · 26 November 2026 · TLS no-policy and alert reconciliation (v1.19.2)_
+_Rev 33 · 27 November 2026 · transport health summary (v1.20)_
 
 DMARCView began as a self-hosted answer to **“what happened?”** and grew into a complete
 reporting and operations dashboard: **“is my configuration correct?”**, **“tell me when it
 changes”**, **“why did it change?”**, **“what should I do next?”**, and now **“can I prove what
 changed and who changed it?”**.
 
-**Current development release: v1.19.2.** The mandatory roadmap is complete. What remains is
+**Current development release: v1.20.0.** The mandatory roadmap is complete. What remains is
 optional, trigger-based or deliberately parked work.
 
 ## Delivered
