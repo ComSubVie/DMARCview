@@ -946,3 +946,41 @@ def test_fleet_health_exposes_next_action(session: Session):
     item = next(row for row in fleet_health(session) if row["domain"] == "fleet.example")
     assert item["next_action"]["label"] == "SPF"
     assert "-all" in item["next_action"]["remediation"]
+
+
+def test_fleet_health_surfaces_transport_failure(session: Session):
+    from app.health.service import fleet_health
+    from app.models import Domain, DomainHealthSnapshot, TransportProbe
+
+    domain = Domain(name="transport-fleet.example")
+    session.add(domain)
+    session.commit()
+    session.refresh(domain)
+    session.add(
+        DomainHealthSnapshot(
+            domain_id=domain.id,
+            checked_at=datetime.now(timezone.utc),
+            overall="pass",
+            score=1.0,
+            core_passed=4,
+            core_total=4,
+            results=[],
+        )
+    )
+    session.add(
+        TransportProbe(
+            domain_id=domain.id,
+            host="mail.transport-fleet.example",
+            port=25,
+            status="fail",
+            error="certificate verification failed: hostname mismatch",
+            checked_at=datetime.now(timezone.utc),
+        )
+    )
+    session.commit()
+
+    item = next(row for row in fleet_health(session) if row["domain"] == domain.name)
+    assert item["transport_status"] == "fail"
+    assert item["failing_probes"] == 1
+    assert item["next_action"]["label"] == "Transport mail.transport-fleet.example:25"
+    assert "hostname mismatch" in item["next_action"]["remediation"]

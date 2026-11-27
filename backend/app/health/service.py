@@ -514,6 +514,28 @@ def _fleet_next_action(results: list[dict[str, Any]]) -> Optional[dict[str, Any]
     }
 
 
+def _probe_next_action(probes: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    attention = [
+        probe
+        for probe in probes
+        if probe.get("status") in {"fail", "warn"}
+    ]
+    if not attention:
+        return None
+    attention.sort(key=lambda probe: 0 if probe.get("status") == "fail" else 1)
+    probe = attention[0]
+    status = "fail" if probe.get("status") == "fail" else "warn"
+    host = f"{probe.get('host')}:{probe.get('port')}"
+    reason = probe.get("error")
+    if not reason and probe.get("days_left") is not None:
+        reason = f"certificate expires in {probe.get('days_left')} days"
+    return {
+        "status": status,
+        "label": f"Transport {host}",
+        "remediation": reason or "STARTTLS or certificate check needs attention.",
+    }
+
+
 def fleet_health(session: Session) -> list[dict[str, Any]]:
     domains = session.exec(select(Domain).order_by(Domain.name)).all()
     out: list[dict[str, Any]] = []
@@ -528,6 +550,26 @@ def fleet_health(session: Session) -> list[dict[str, Any]]:
         probe_payloads = [serialise_probe(probe) for probe in probes]
         results = _results_with_context(row.results, probe_payloads) if row else []
         failing_probes = sum(1 for probe in probes if probe.status == "fail")
+        warning_probes = sum(1 for probe in probes if probe.status == "warn")
+        transport_status = (
+            "fail"
+            if failing_probes
+            else "warn"
+            if warning_probes
+            else "pass"
+            if probes
+            else "none"
+        )
+        core_action = _fleet_next_action(results)
+        probe_action = _probe_next_action(probe_payloads)
+        if (
+            probe_action is not None
+            and probe_action["status"] == "fail"
+            and (core_action is None or core_action["status"] != "fail")
+        ):
+            next_action = probe_action
+        else:
+            next_action = core_action or probe_action
         out.append(
             {
                 "domain": domain.name,
@@ -540,11 +582,13 @@ def fleet_health(session: Session) -> list[dict[str, Any]]:
                 "stale": serialise_snapshot(row)["stale"] if row else True,
                 "probes": len(probes),
                 "failing_probes": failing_probes,
+                "warning_probes": warning_probes,
+                "transport_status": transport_status,
                 "next_expiry_days": min(
                     (probe.days_left for probe in probes if probe.days_left is not None),
                     default=None,
                 ),
-                "next_action": _fleet_next_action(results),
+                "next_action": next_action,
             }
         )
     return out

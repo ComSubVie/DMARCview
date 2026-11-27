@@ -748,6 +748,8 @@ export interface FleetHealthItem {
   stale: boolean;
   probes: number;
   failing_probes: number;
+  warning_probes: number;
+  transport_status: "pass" | "warn" | "fail" | "none";
   next_expiry_days: number | null;
   next_action: {
     status: HealthStatus;

@@ -4338,3 +4338,17 @@ table.data td.right {
 #transport {
   scroll-margin-top: 18px;
 }
+
+.fleet-transport {
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.fleet-transport.fail {
+  color: #b42318;
+}
+
+.fleet-transport.warn {
+  color: #b54708;
+}

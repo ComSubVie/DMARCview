@@ -614,6 +614,12 @@ export function HealthPage() {
                       <Badge tone={overallMeta[item.overall].tone}>
                         {item.checked ? overallMeta[item.overall].label : "Not checked"}
                       </Badge>
+                      {item.transport_status === "fail" || item.transport_status === "warn" ? (
+                        <div className={`tiny fleet-transport ${item.transport_status}`}>
+                          Transport {item.probes - item.failing_probes}/{item.probes}{" "}
+                          {item.transport_status === "fail" ? "failing" : "warning"}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="center num">
                       {item.checked ? `${item.core_passed}/${item.core_total}` : "—"}
@@ -685,9 +691,14 @@ export function HealthPage() {
   const probeFailed = health.probes.filter((probe) => probe.status === "fail").length;
   const probeWarn = health.probes.filter((probe) => probe.status === "warn").length;
   const probeTone = probeFailed > 0 ? "bad" : probeWarn > 0 ? "warn" : "ok";
-  const nextProbe =
-    health.probes.find((probe) => probe.status === "fail") ??
-    health.probes.find((probe) => probe.status === "warn");
+  const probeAttention = health.probes
+    .filter((probe) => probe.status === "fail" || probe.status === "warn")
+    .sort((a, b) => (a.status === "fail" ? 0 : 1) - (b.status === "fail" ? 0 : 1));
+  const nextProbe = probeAttention[0];
+  const probeNames = probeAttention.map((probe) => `${probe.host}:${probe.port}`);
+  const probeList =
+    probeNames.slice(0, 3).join(", ") +
+    (probeNames.length > 3 ? ` +${probeNames.length - 3} more` : "");
 
   return (
     <div className="fade-in">
@@ -771,7 +782,10 @@ export function HealthPage() {
         <div className={`callout health-next health-next-transport${nextProbe.status === "warn" ? " warn" : ""}`}>
           <Wrench size={15} style={{ flex: "none", marginTop: 1 }} />
           <span>
-            <strong>Transport:</strong> {nextProbe.host}:{nextProbe.port} —{" "}
+            <strong>
+              Transport{probeAttention.length > 1 ? ` (${probeAttention.length} targets)` : ""}:
+            </strong>{" "}
+            {probeList} —{" "}
             {nextProbe.error ||
               (nextProbe.days_left !== null
                 ? `certificate expires in ${nextProbe.days_left} days`

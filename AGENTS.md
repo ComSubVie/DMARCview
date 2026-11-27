@@ -232,7 +232,7 @@ multi-arch builds. The image copies `LICENSE` and `THIRD_PARTY_NOTICES.md`; keep
 
 `docs/ROADMAP.md` is a plan, not an automatic backlog. Do not implement roadmap items unless
 the user asks for them. Export, fleet comparison, retention, DMARCbis and decision support are
-delivered, including v1.20 transport health visibility, TLS no-policy labelling, host backfill and DKIM evidence drill-downs. No mandatory roadmap work remains. MFA stays
+delivered, including v1.20.1 fleet transport visibility and single-domain transport health, TLS no-policy labelling, host backfill and DKIM evidence drill-downs. No mandatory roadmap work remains. MFA stays
 parked; RUF and platform work remain optional/trigger-based.
 
 ## Security expectations
